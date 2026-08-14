@@ -7,7 +7,7 @@ const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
-app.set('trust proxy', true); // Fixed: Properly trust Render proxy headers for secure protocol detection[cite: 4]
+app.set('trust proxy', true);
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
@@ -97,7 +97,7 @@ app.get('/', (req, res) => {
                     <div class="badge">Luffy.void Suite</div>
                     <h1>Welcome to Luffy.void</h1>
                     <p>Authorize with Discord to unlock absolute supreme control over server automation, welcome embeds, custom file emojis, and update center nodes.</p>
-                    <a href="https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify%20guilds" class="login-btn">
+                    <a href="https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI || 'https://luffy-void1.onrender.com/auth/discord/callback')}&response_type=code&scope=identify%20guilds" class="login-btn">
                         🔐 Login with Discord
                     </a>
                 </div>
@@ -241,7 +241,6 @@ app.get('/admin-panel', (req, res) => {
                     
                     <hr style="border:0;border-top:1px solid var(--purple-border);margin:25px 0;">
 
-                    <!-- Broadcast Message to All Servers -->
                     <form action="/admin-panel/broadcast" method="POST">
                         <h3 style="font-size:16px;margin-bottom:12px;color:#fff;">📢 Broadcast Global Announcement</h3>
                         <div class="form-group">
@@ -253,7 +252,6 @@ app.get('/admin-panel', (req, res) => {
 
                     <hr style="border:0;border-top:1px solid var(--purple-border);margin:25px 0;">
 
-                    <!-- Edit Bot Profile -->
                     <form action="/admin-panel/edit-bot" method="POST">
                         <h3 style="font-size:16px;margin-bottom:12px;color:#fff;">🤖 Edit Bot Profile Details</h3>
                         <div class="form-group">
@@ -304,7 +302,7 @@ app.post('/admin-panel/edit-bot', async (req, res) => {
 });
 
 // ==========================================
-// SERVER MANAGEMENT DASHBOARD (100000x BETTER PURPLE UI/UX)
+// SERVER MANAGEMENT DASHBOARD
 // ==========================================
 app.get('/dashboard/:guildId', (req, res) => {
     const guildId = req.params.guildId;
@@ -460,7 +458,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                 }
                 .variable-box code { color: #c77dff; font-weight: bold; background: rgba(157,78,221,0.15); padding: 2px 6px; border-radius: 4px; }
                 
-                /* LIVE EMBED PREVIEW PANE STYLES */
                 .preview-pane {
                   width: 390px; position: sticky; top: 35px; height: fit-content;
                   background: rgba(12, 10, 18, 0.96); border: 1px solid var(--purple-border);
@@ -512,7 +509,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                     <div class="content-container">
                         <div id="saveAlert" class="save-alert">✅ Server configuration and settings successfully updated!</div>
                         
-                        <!-- 🚀 UPDATES & ANNOUNCEMENTS PANEL -->
                         <div id="updates-center" class="panel-card active">
                             <form action="/dashboard/${guildId}/send-update" method="POST">
                                 <div class="sub-box">
@@ -542,7 +538,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                             </form>
                         </div>
 
-                        <!-- Server Edit Panel -->
                         <div id="server-edit" class="panel-card">
                             <form action="/dashboard/${guildId}/edit-server" method="POST">
                                 <div class="sub-box">
@@ -562,7 +557,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                             </form>
                         </div>
 
-                        <!-- Emoji Manager Panel (File Upload) -->
                         <div id="emoji-manager" class="panel-card">
                             <div class="sub-box">
                                 <div class="sub-box-header">Emoji File Upload Hub</div>
@@ -585,7 +579,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                             </div>
                         </div>
 
-                        <!-- Welcome Messages Panel -->
                         <div id="greetings" class="panel-card">
                             <form action="/dashboard/${guildId}/save-welcome" method="POST">
                                 <div class="sub-box">
@@ -611,7 +604,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                             </form>
                         </div>
 
-                        <!-- Advanced Embed Welcome Builder Panel with Image Upload Support -->
                         <div id="embed-builder" class="panel-card">
                             <form action="/dashboard/${guildId}/save-embed-with-file" method="POST" enctype="multipart/form-data" id="embedForm">
                                 <div class="sub-box">
@@ -619,7 +611,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                                     <div class="box-title">Advanced Embed Welcome & Live Preview</div>
                                     <div class="box-desc">Customize rich welcome embeds with designated channel, emojis, big images (URL or File Upload), thumbnails, and footers.</div>
 
-                                    <!-- Embed Channel Selection -->
                                     <div class="form-group">
                                         <label>Embed Welcome Channel (Send this embed on member join)</label>
                                         <select name="embedWelcomeChannel">
@@ -627,7 +618,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                                         </select>
                                     </div>
 
-                                    <!-- Custom Emojis Quick Clicker -->
                                     <div class="form-group">
                                         <label>Click server emojis to insert into description:</label>
                                         <div class="emoji-picker-container" style="margin-top:5px;">
@@ -635,7 +625,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                                         </div>
                                     </div>
 
-                                    <!-- ROW 1: Icon url | Name | Name url -->
                                     <div style="display:grid; grid-template-columns: 1fr 2fr 1fr; gap: 15px; margin-bottom: 20px;">
                                         <div class="form-group" style="margin-bottom:0;">
                                             <label>Icon url</label>
@@ -651,7 +640,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                                         </div>
                                     </div>
 
-                                    <!-- ROW 2: Title | Title url -->
                                     <div style="display:grid; grid-template-columns: 3fr 1fr; gap: 15px; margin-bottom: 20px;">
                                         <div class="form-group" style="margin-bottom:0;">
                                             <label>Title</label>
@@ -663,13 +651,11 @@ app.get('/dashboard/:guildId', (req, res) => {
                                         </div>
                                     </div>
 
-                                    <!-- ROW 3: Description -->
                                     <div class="form-group">
                                         <label>Description (Supports emojis & variables like {mention})</label>
                                         <textarea name="embedDesc" id="embedDescInput" rows="4" maxlength="2048" placeholder="Description" oninput="updatePreview()">${config.embedDesc || ''}</textarea>
                                     </div>
 
-                                    <!-- ROW 4: Image url / File Upload & Thumbnail url -->
                                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                                         <div class="form-group" style="margin-bottom:0;">
                                             <label>Big Image URL or Upload File</label>
@@ -682,7 +668,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                                         </div>
                                     </div>
 
-                                    <!-- ROW 5: Footer & Footer icon -->
                                     <div style="display:grid; grid-template-columns: 2fr 1fr; gap: 15px; margin-bottom: 25px;">
                                         <div class="form-group" style="margin-bottom:0;">
                                             <label>Footer</label>
@@ -699,7 +684,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                             </form>
                         </div>
 
-                        <!-- Birthday Panel -->
                         <div id="birthdays" class="panel-card">
                             <div class="sub-box">
                                 <div class="sub-box-header">Birthday Suite</div>
@@ -719,7 +703,6 @@ app.get('/dashboard/:guildId', (req, res) => {
 
                     </div>
 
-                    <!-- LIVE PREVIEW PANE -->
                     <div class="preview-pane">
                         <div class="preview-title">👁️ Live Embed Preview</div>
                         <div class="discord-message-mock">
@@ -858,7 +841,7 @@ app.post('/dashboard/:guildId/save-embed-with-file', async (req, res) => {
         const fileName = `embed_${Date.now()}_${file.name}`;
         const uploadPath = path.join(uploadsDir, fileName);
         await file.mv(uploadPath);
-        imageUrl = `${req.protocol}://${req.get('host')}/uploads/${fileName}`;
+        imageUrl = `https://luffy-void1.onrender.com/uploads/${fileName}`;
     }
 
     serverSettings[guildId] = {
@@ -908,9 +891,7 @@ app.get('/auth/discord/callback', async (req, res) => {
     const code = req.query.code;
     if (!code) return res.redirect('/');
     
-    // Dynamic protocol check to ensure secure https redirection behind Render proxy
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const redirectUri = process.env.REDIRECT_URI || `${protocol}://${req.get('host')}/auth/discord/callback`;
+    const redirectUri = process.env.REDIRECT_URI || 'https://luffy-void1.onrender.com/auth/discord/callback';
 
     try {
         const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
@@ -950,7 +931,7 @@ app.get('/logout', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🌐 Luffy.void Web Panel online at http://localhost:${PORT}`);
+    console.log(`🌐 Luffy.void Web Panel online at https://luffy-void1.onrender.com`);
 });
 
 // ==========================================
