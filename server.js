@@ -7,6 +7,7 @@ const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', true); // Fixed: Properly trust Render proxy headers for secure protocol detection[cite: 4]
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
@@ -336,11 +337,6 @@ app.get('/dashboard/:guildId', (req, res) => {
         channelsOptionsHtml += `<option value="${c.id}" ${config.updateChannel === c.id ? 'selected' : ''}>#${c.name}</option>`;
     });
 
-    let welcomeChannelsOptionsHtml = `<option value="">Select welcome channel...</option>`;
-    guild.channels.cache.filter(c => c.type === 0).forEach(c => {
-        welcomeChannelsOptionsHtml += `<option value="${c.id}" ${config.welcomeChannel === c.id ? 'selected' : ''}>#${c.name}</option>`;
-    });
-
     let embedWelcomeChannelsHtml = `<option value="">Select embed welcome channel...</option>`;
     guild.channels.cache.filter(c => c.type === 0).forEach(c => {
         embedWelcomeChannelsHtml += `<option value="${c.id}" ${config.embedWelcomeChannel === c.id ? 'selected' : ''}>#${c.name}</option>`;
@@ -603,13 +599,6 @@ app.get('/dashboard/:guildId', (req, res) => {
                                         <code>{server}</code> - The server's name.<br>
                                         <code>{user(proper)}</code> - The person joining's name in proper format.<br>
                                         <code>{server(members)}</code> - The total number of members after joining.
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label>Welcome Text Channel</label>
-                                        <select name="welcomeChannel">
-                                            ${welcomeChannelsOptionsHtml}
-                                        </select>
                                     </div>
 
                                     <div class="form-group">
@@ -918,6 +907,11 @@ app.post('/dashboard/:guildId/upload-emoji-file', async (req, res) => {
 app.get('/auth/discord/callback', async (req, res) => {
     const code = req.query.code;
     if (!code) return res.redirect('/');
+    
+    // Dynamic protocol check to ensure secure https redirection behind Render proxy
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const redirectUri = process.env.REDIRECT_URI || `${protocol}://${req.get('host')}/auth/discord/callback`;
+
     try {
         const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
             method: 'POST',
@@ -927,7 +921,7 @@ app.get('/auth/discord/callback', async (req, res) => {
                 client_secret: process.env.CLIENT_SECRET,
                 grant_type: 'authorization_code',
                 code: code,
-                redirect_uri: process.env.REDIRECT_URI,
+                redirect_uri: redirectUri,
             }),
         });
         const tokenData = await tokenResponse.json();
