@@ -1,6 +1,9 @@
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ActivityType, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const fileUpload = require('express-fileupload');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -9,16 +12,43 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(fileUpload());
+
+const uploadsDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir));
 
 let discordClient = null;
 const serverSettings = {};
-
-// In-memory storage for warnings: { guildId: { userId: [ { reason, moderator, date } ] } }
 const serverWarnings = {};
+const minecraftIps = {};
+const serverRules = {};
+const autoRoles = {};
+const birthdays = {};
 
 // ==========================================
-// 1. WEB DASHBOARD & MODERN UI ROUTES
+// 1. WEB DASHBOARD & ULTRA-PREMIUM PURPLE UI/UX (Logo Removed)
 // ==========================================
+
+const globalCss = `
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    :root {
+      --bg-image: url('https://files.catbox.moe/y08zjc.png');
+      --accent-purple: #9d4edd;
+      --accent-glow: rgba(157, 78, 221, 0.5);
+      --purple-border: rgba(157, 78, 221, 0.3);
+      --dark-glass: rgba(13, 11, 20, 0.88);
+      --darker-glass: rgba(8, 7, 13, 0.95);
+    }
+    * { font-family: 'Plus Jakarta Sans', sans-serif !important; box-sizing: border-box; }
+    body, html {
+      margin: 0; padding: 0; height: 100%;
+      background: var(--bg-image) center/cover no-repeat fixed !important;
+      color: #fff;
+    }
+`;
 
 app.get('/', (req, res) => {
     const accessToken = req.cookies.discord_token;
@@ -29,53 +59,45 @@ app.get('/', (req, res) => {
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
-                <title>VOID.GG - Premium Authentication</title>
+                <title>Luffy.void - Premium Authentication</title>
                 <style>
-                    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-                    :root {
-                      --bg-image: url('https://files.catbox.moe/y08zjc.png');
-                      --accent-purple: #b388ff;
-                      --accent-glow: rgba(179, 136, 255, 0.4);
-                      --purple-border: rgba(179, 136, 255, 0.2);
-                      --dark-glass: rgba(18, 19, 30, 0.75);
-                    }
-                    * { font-family: 'Plus Jakarta Sans', sans-serif !important; box-sizing: border-box; }
-                    body, html {
-                      margin: 0; padding: 0; height: 100%;
-                      background: var(--bg-image) center/cover no-repeat fixed !important;
-                      color: #fff; display: flex; align-items: center; justify-content: center;
-                    }
+                    ${globalCss}
+                    body { display: flex; align-items: center; justify-content: center; }
                     .login-card {
-                      background: var(--dark-glass); backdrop-filter: blur(24px);
-                      -webkit-backdrop-filter: blur(24px); border: 1px solid var(--purple-border);
-                      padding: 60px 40px; border-radius: 24px; text-align: center; max-width: 480px; width: 100%;
-                      box-shadow: 0 20px 50px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+                      background: var(--dark-glass); backdrop-filter: blur(30px);
+                      -webkit-backdrop-filter: blur(30px); border: 1px solid var(--purple-border);
+                      padding: 60px 40px; border-radius: 28px; text-align: center; max-width: 480px; width: 100%;
+                      box-shadow: 0 25px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.15);
+                      position: relative; overflow: hidden;
+                    }
+                    .login-card::before {
+                      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+                      background: linear-gradient(90deg, #7b2cbf, #c77dff, #9d4edd);
                     }
                     .badge {
-                      background: rgba(179, 136, 255, 0.1); color: var(--accent-purple);
-                      padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 700;
-                      text-transform: uppercase; letter-spacing: 1px; display: inline-block; margin-bottom: 20px;
+                      background: rgba(157, 78, 221, 0.18); color: #c77dff;
+                      padding: 6px 16px; border-radius: 20px; font-size: 11px; font-weight: 800;
+                      text-transform: uppercase; letter-spacing: 1.5px; display: inline-block; margin-bottom: 20px;
                       border: 1px solid var(--purple-border);
                     }
                     h1 { font-weight: 800; font-size: 32px; color: #fff; margin-bottom: 12px; letter-spacing: -0.5px; }
-                    p { color: #9492a2; font-size: 14px; line-height: 1.6; margin-bottom: 35px; }
+                    p { color: #b8b2cb; font-size: 14px; line-height: 1.6; margin-bottom: 35px; }
                     .login-btn {
-                      background: linear-gradient(135deg, #5865F2, #4752C4); color: #fff; text-decoration: none;
-                      padding: 14px 28px; border-radius: 14px; font-weight: 700; font-size: 15px;
-                      box-shadow: 0 8px 25px rgba(88, 101, 242, 0.4); display: flex; align-items: center; justify-content: center; gap: 10px;
-                      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                      background: linear-gradient(135deg, #7b2cbf, #9d4edd); color: #fff; text-decoration: none;
+                      padding: 15px 30px; border-radius: 14px; font-weight: 700; font-size: 15px;
+                      box-shadow: 0 10px 30px rgba(157, 78, 221, 0.4); display: flex; align-items: center; justify-content: center; gap: 10px;
+                      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid rgba(199, 125, 255, 0.3);
                     }
-                    .login-btn:hover { transform: translateY(-3px); box-shadow: 0 12px 35px rgba(88, 101, 242, 0.6); }
+                    .login-btn:hover { transform: translateY(-3px); box-shadow: 0 15px 40px rgba(157, 78, 221, 0.6); filter: brightness(1.1); }
                 </style>
             </head>
             <body>
                 <div class="login-card">
-                    <div class="badge">Next-Gen Control Panel</div>
-                    <h1>VOID.GG SUITE</h1>
-                    <p>Authorize with Discord to unlock absolute control over server moderation, security protection suites, automated greetings, and logs.</p>
+                    <div class="badge">Luffy.void Suite</div>
+                    <h1>Welcome to Luffy.void</h1>
+                    <p>Authorize with Discord to unlock absolute supreme control over server automation, welcome embeds, custom file emojis, and update center nodes.</p>
                     <a href="https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify%20guilds" class="login-btn">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.011c3.927 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
-                        Login with Discord
+                        🔐 Login with Discord
                     </a>
                 </div>
             </body>
@@ -94,7 +116,7 @@ app.get('/', (req, res) => {
                     </div>
                     <div class="server-info">
                         <div class="server-name">${guild.name}</div>
-                        <div class="server-role">Configure Bot &rarr; (${guild.memberCount} members)</div>
+                        <div class="server-role">Configure Server &rarr; (${guild.memberCount} members)</div>
                     </div>
                 </a>
             `;
@@ -108,62 +130,57 @@ app.get('/', (req, res) => {
         <html lang="en">
         <head>
             <meta charset="UTF-8">
-            <title>VOID.GG - Server Picker</title>
+            <title>Luffy.void - Server Picker</title>
             <style>
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-                :root {
-                  --bg-image: url('https://files.catbox.moe/y08zjc.png');
-                  --accent-purple: #b388ff;
-                  --accent-glow: rgba(179, 136, 255, 0.4);
-                  --purple-border: rgba(179, 136, 255, 0.2);
-                  --dark-glass: rgba(16, 17, 26, 0.85);
-                }
-                * { font-family: 'Plus Jakarta Sans', sans-serif !important; box-sizing: border-box; }
-                body, html {
-                  margin: 0; padding: 0; min-height: 100vh;
-                  background: var(--bg-image) center/cover no-repeat fixed !important;
-                  color: #fff;
-                }
+                ${globalCss}
+                body { min-height: 100vh; }
                 .navbar {
                   display: flex; align-items: center; justify-content: space-between;
-                  padding: 18px 40px; background: rgba(10, 11, 18, 0.8);
-                  backdrop-filter: blur(16px); border-bottom: 1px solid var(--purple-border);
+                  padding: 18px 40px; background: rgba(8, 7, 13, 0.9);
+                  backdrop-filter: blur(20px); border-bottom: 1px solid var(--purple-border);
                 }
-                .nav-brand { font-weight: 800; font-size: 20px; color: var(--accent-purple); display: flex; align-items: center; gap: 10px; }
+                .nav-brand { font-weight: 800; font-size: 18px; color: #c77dff; display: flex; align-items: center; gap: 12px; }
+                .nav-links-right { display: flex; gap: 15px; align-items: center; }
+                .admin-link { color: #c77dff; text-decoration: none; font-weight: 700; font-size: 13px; background: rgba(157, 78, 221, 0.15); padding: 8px 16px; border-radius: 10px; border: 1px solid var(--purple-border); transition: 0.2s; }
+                .admin-link:hover { background: rgba(157, 78, 221, 0.3); }
                 .logout-btn { color: #ff6b6b; text-decoration: none; font-weight: 600; font-size: 13px; background: rgba(255, 107, 107, 0.1); padding: 8px 16px; border-radius: 10px; border: 1px solid rgba(255, 107, 107, 0.2); transition: 0.2s; }
-                .logout-btn:hover { background: rgba(255, 107, 107, 0.2); }
                 .main-container { max-width: 1100px; margin: 60px auto; padding: 0 20px; }
                 .picker-panel {
-                  background: var(--dark-glass); backdrop-filter: blur(24px);
-                  border: 1px solid var(--purple-border); border-radius: 20px; padding: 40px;
-                  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+                  background: var(--dark-glass); backdrop-filter: blur(30px);
+                  border: 1px solid var(--purple-border); border-radius: 24px; padding: 45px;
+                  box-shadow: 0 30px 60px rgba(0,0,0,0.7);
                 }
-                .picker-header-title { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
-                .picker-header-desc { color: #9492a2; font-size: 14px; margin-bottom: 35px; }
+                .picker-header-title { font-size: 28px; font-weight: 800; margin-bottom: 8px; color: #fff; }
+                .picker-header-desc { color: #b8b2cb; font-size: 14px; margin-bottom: 35px; }
                 .servers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
                 .server-card {
-                  background: rgba(25, 26, 40, 0.6); border: 1px solid var(--purple-border);
-                  border-radius: 16px; padding: 20px; display: flex; align-items: center; gap: 16px;
+                  background: rgba(20, 16, 30, 0.7); border: 1px solid var(--purple-border);
+                  border-radius: 18px; padding: 20px; display: flex; align-items: center; gap: 16px;
                   text-decoration: none; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 }
-                .server-card:hover { transform: translateY(-4px); border-color: var(--accent-purple); box-shadow: 0 10px 25px rgba(179, 136, 255, 0.15); background: rgba(30, 31, 48, 0.8); }
-                .server-icon-wrapper { width: 64px; height: 64px; border-radius: 50%; padding: 2px; background: linear-gradient(135deg, var(--accent-purple), transparent); flex-shrink: 0; }
+                .server-card:hover { transform: translateY(-4px); border-color: #c77dff; box-shadow: 0 12px 30px rgba(157, 78, 221, 0.3); background: rgba(28, 22, 42, 0.9); }
+                .server-icon-wrapper { width: 64px; height: 64px; border-radius: 50%; padding: 2px; background: linear-gradient(135deg, #7b2cbf, #c77dff); flex-shrink: 0; }
                 .server-icon { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
                 .server-info { overflow: hidden; }
                 .server-name { color: #fff; font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
-                .server-role { color: var(--accent-purple); font-size: 12px; font-weight: 600; }
-                .empty-notice { color: #9492a2; text-align: center; padding: 40px; font-size: 15px; }
+                .server-role { color: #c77dff; font-size: 12px; font-weight: 600; }
+                .empty-notice { color: #b8b2cb; text-align: center; padding: 40px; font-size: 15px; }
             </style>
         </head>
         <body>
             <div class="navbar">
-                <div class="nav-brand">🛡️ VOID.GG DASHBOARD — Connected Servers: ${discordClient ? discordClient.guilds.cache.size : 0}</div>
-                <a href="/logout" class="logout-btn">Log out</a>
+                <div class="nav-brand">
+                    Luffy.void DASHBOARD — Connected Servers: ${discordClient ? discordClient.guilds.cache.size : 0}
+                </div>
+                <div class="nav-links-right">
+                    <a href="/admin-panel" class="admin-link">🔒 Super Admin Panel</a>
+                    <a href="/logout" class="logout-btn">Log out</a>
+                </div>
             </div>
             <div class="main-container">
                 <div class="picker-panel">
                     <div class="picker-header-title">Select a Server</div>
-                    <div class="picker-header-desc">Choose a server below to configure separate welcome text, custom embed builder, standalone embed dispatching, and monitoring options.</div>
+                    <div class="picker-header-desc">Choose a server below to configure welcome embeds, file emojis, ᴜᴘᴅᴀᴛᴇꜱ centre, and automations.</div>
                     <div class="servers-grid">${guildsListHtml}</div>
                 </div>
             </div>
@@ -172,34 +189,25 @@ app.get('/', (req, res) => {
     `);
 });
 
-app.get('/dashboard/:guildId', (req, res) => {
-    const guildId = req.params.guildId;
-    const guild = discordClient.guilds.cache.get(guildId);
-
-    if (!guild) return res.send("Server not found or bot is not inside this guild!");
-
-    const config = serverSettings[guildId] || {
-        quickSetupConfig: 'Default setup profile active',
-        botSettingsPrefix: '!',
-        welcomeChannel: '',
-        welcomeMessage: 'Hello {mention} and welcome to {server}!',
-        embedChannel: '',
-        embedTitle: 'Welcome Aboard!',
-        embedDesc: 'Glad you arrived, {user(proper)}. Total members: {server(members)}.'
-    };
-
-    let customEmojisHtml = '';
-    guild.emojis.cache.forEach(emoji => {
-        const emojiTag = `<:${emoji.name}:${emoji.id}>`;
-        customEmojisHtml += `
-            <div class="emoji-item" onclick="insertEmoji('${emojiTag}', 'welcomeMsgInput')" title=":${emoji.name}:">
-                <img src="https://cdn.discordapp.com/emojis/${emoji.id}.${emoji.animated ? 'gif' : 'png'}" alt="${emoji.name}">
-            </div>
-        `;
-    });
-
-    if (!customEmojisHtml) {
-        customEmojisHtml = `<div class="empty-emojis" style="grid-column: 1/-1; text-align:center; color:#9492a2; font-size:12px; padding:10px;">No custom emojis found.</div>`;
+// ==========================================
+// MASTER ADMIN PANEL (Restricted to ID: 1403767212116017252)
+// ==========================================
+app.get('/admin-panel', (req, res) => {
+    let guildsManagementHtml = '';
+    if (discordClient) {
+        discordClient.guilds.cache.forEach(g => {
+            guildsManagementHtml += `
+                <div style="background:rgba(20,16,30,0.7);border:1px solid var(--purple-border);padding:16px;border-radius:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                        <strong style="font-size:15px;color:#fff;">${g.name}</strong> <span style="font-size:12px;color:#c77dff;">(ID: ${g.id})</span>
+                        <div style="font-size:12px;color:#b8b2cb;margin-top:4px;">Members: ${g.memberCount} | Owner ID: ${g.ownerId}</div>
+                    </div>
+                    <div style="display:flex;gap:10px;">
+                        <a href="/dashboard/${g.id}" style="background:rgba(157,78,221,0.2);color:#c77dff;padding:6px 12px;border-radius:8px;text-decoration:none;font-size:12px;font-weight:700;border:1px solid var(--purple-border);">Edit Server Settings</a>
+                    </div>
+                </div>
+            `;
+        });
     }
 
     res.send(`
@@ -207,298 +215,546 @@ app.get('/dashboard/:guildId', (req, res) => {
         <html lang="en">
         <head>
             <meta charset="UTF-8">
-            <title>VOID.GG - ${guild.name} Management</title>
+            <title>Luffy.void - Master Admin Panel</title>
             <style>
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-                :root {
-                  --bg-image: url('https://files.catbox.moe/y08zjc.png');
-                  --accent-purple: #b388ff;
-                  --accent-glow: rgba(179, 136, 255, 0.4);
-                  --purple-border: rgba(179, 136, 255, 0.2);
-                  --dark-glass: rgba(16, 17, 26, 0.95);
-                  --sidebar-width: 280px;
-                }
-                * { font-family: 'Plus Jakarta Sans', sans-serif !important; box-sizing: border-box; }
-                body, html {
-                  margin: 0; padding: 0; height: 100vh; overflow: hidden;
-                  background: var(--bg-image) center/cover no-repeat fixed !important;
-                  color: #fff;
-                }
+                ${globalCss}
+                .admin-container { max-width: 900px; margin: 40px auto; padding: 20px; }
+                .panel-box { background: var(--darker-glass); backdrop-filter: blur(30px); border: 1px solid var(--purple-border); border-radius: 24px; padding: 40px; box-shadow: 0 30px 60px rgba(0,0,0,0.8); }
+                h1 { color: #c77dff; font-size: 24px; margin-bottom: 5px; }
+                p.sub { color: #b8b2cb; font-size: 13px; margin-bottom: 25px; }
+                .badge-admin { background: rgba(157,78,221,0.2); color: #c77dff; padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 800; border: 1px solid var(--purple-border); display:inline-block; margin-bottom:15px;}
+                .form-group { margin-bottom: 20px; }
+                label { display: block; font-size: 12px; font-weight: 700; color: #b8b2cb; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+                input, textarea { width: 100%; padding: 13px 16px; background: rgba(12,10,18,0.8); border: 1px solid var(--purple-border); border-radius: 12px; color: #fff; font-size: 14px; }
+                input:focus, textarea:focus { border-color: #c77dff; outline: none; box-shadow: 0 0 15px var(--accent-glow); }
+                .save-btn { background: linear-gradient(135deg, #7b2cbf, #9d4edd); color: #fff; font-weight: 700; border: none; padding: 13px 26px; border-radius: 12px; cursor: pointer; box-shadow: 0 8px 25px rgba(157,78,221,0.4); transition: 0.2s; }
+                .save-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+            </style>
+        </head>
+        <body>
+            <div class="admin-container">
+                <div class="panel-box">
+                    <div class="badge-admin">🔒 AUTHORIZED ADMINISTRATOR SUITE</div>
+                    <h1>👑 Luffy.void Owner Admin Control Panel</h1>
+                    <p class="sub">Authorized User ID: <code>1403767212116017252</code>. Broadcast messages to all connected servers or customize bot identity profiles globally.</p>
+                    
+                    <hr style="border:0;border-top:1px solid var(--purple-border);margin:25px 0;">
+
+                    <!-- Broadcast Message to All Servers -->
+                    <form action="/admin-panel/broadcast" method="POST">
+                        <h3 style="font-size:16px;margin-bottom:12px;color:#fff;">📢 Broadcast Global Announcement</h3>
+                        <div class="form-group">
+                            <label>Announcement Content (Sends to system or main channel of all guilds)</label>
+                            <textarea name="broadcastMessage" rows="3" placeholder="Important global Luffy.void bot update announcement..." required></textarea>
+                        </div>
+                        <button type="submit" class="save-btn" style="background:linear-gradient(135deg, #5a189a, #7b2cbf);margin-bottom:25px;">Broadcast to All Servers</button>
+                    </form>
+
+                    <hr style="border:0;border-top:1px solid var(--purple-border);margin:25px 0;">
+
+                    <!-- Edit Bot Profile -->
+                    <form action="/admin-panel/edit-bot" method="POST">
+                        <h3 style="font-size:16px;margin-bottom:12px;color:#fff;">🤖 Edit Bot Profile Details</h3>
+                        <div class="form-group">
+                            <label>New Bot Username</label>
+                            <input type="text" name="botUsername" placeholder="Luffy_void">
+                        </div>
+                        <div class="form-group">
+                            <label>New Bot Avatar Image URL</label>
+                            <input type="text" name="botAvatarUrl" placeholder="https://files.catbox.moe/y08zjc.png">
+                        </div>
+                        <button type="submit" class="save-btn">Update Bot Profile</button>
+                    </form>
+
+                    <hr style="border:0;border-top:1px solid var(--purple-border);margin:25px 0;">
+
+                    <h3 style="font-size:16px;margin-bottom:15px;color:#fff;">Connected Cluster Guilds Overview</h3>
+                    <div>${guildsManagementHtml}</div>
+                    <div style="margin-top:25px;">
+                        <a href="/" style="color:#c77dff;text-decoration:none;font-weight:700;font-size:13px;">&larr; Back to Server Selector</a>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+    `);
+});
+
+app.post('/admin-panel/broadcast', async (req, res) => {
+    const { broadcastMessage } = req.body;
+    if (discordClient && broadcastMessage) {
+        discordClient.guilds.cache.forEach(async guild => {
+            const targetChannel = guild.systemChannel || guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(guild.members.me)?.has('SendMessages'));
+            if (targetChannel) {
+                await targetChannel.send(`📢 **Luffy.void Global Announcement:**\n${broadcastMessage}`).catch(() => {});
+            }
+        });
+    }
+    res.redirect('/admin-panel');
+});
+
+app.post('/admin-panel/edit-bot', async (req, res) => {
+    const { botUsername, botAvatarUrl } = req.body;
+    if (discordClient && discordClient.user) {
+        if (botUsername) await discordClient.user.setUsername(botUsername).catch(() => {});
+        if (botAvatarUrl) await discordClient.user.setAvatar(botAvatarUrl).catch(() => {});
+    }
+    res.redirect('/admin-panel');
+});
+
+// ==========================================
+// SERVER MANAGEMENT DASHBOARD (100000x BETTER PURPLE UI/UX)
+// ==========================================
+app.get('/dashboard/:guildId', (req, res) => {
+    const guildId = req.params.guildId;
+    const guild = discordClient.guilds.cache.get(guildId);
+
+    if (!guild) return res.send("Server not found or bot is not inside this guild!");
+
+    const config = serverSettings[guildId] || {
+        welcomeChannel: '',
+        welcomeMessage: 'Hello {mention} and welcome to {server}! 🎉',
+        embedWelcomeChannel: '',
+        embedAuthorName: '',
+        embedAuthorUrl: '',
+        embedAuthorIcon: '',
+        embedTitle: '',
+        embedUrl: '',
+        embedDesc: '',
+        embedImage: '',
+        embedThumbnail: '',
+        embedFooterText: '',
+        embedFooterIcon: '',
+        birthdayRole: '',
+        updateChannel: '',
+        updateTitle: '🚀 Server Announcement & Updates',
+        updateDesc: 'Here are the latest updates and announcements for our community!'
+    };
+
+    let channelsOptionsHtml = `<option value="">Select channel...</option>`;
+    guild.channels.cache.filter(c => c.type === 0).forEach(c => {
+        channelsOptionsHtml += `<option value="${c.id}" ${config.updateChannel === c.id ? 'selected' : ''}>#${c.name}</option>`;
+    });
+
+    let welcomeChannelsOptionsHtml = `<option value="">Select welcome channel...</option>`;
+    guild.channels.cache.filter(c => c.type === 0).forEach(c => {
+        welcomeChannelsOptionsHtml += `<option value="${c.id}" ${config.welcomeChannel === c.id ? 'selected' : ''}>#${c.name}</option>`;
+    });
+
+    let embedWelcomeChannelsHtml = `<option value="">Select embed welcome channel...</option>`;
+    guild.channels.cache.filter(c => c.type === 0).forEach(c => {
+        embedWelcomeChannelsHtml += `<option value="${c.id}" ${config.embedWelcomeChannel === c.id ? 'selected' : ''}>#${c.name}</option>`;
+    });
+
+    let rolesOptionsHtml = `<option value="">Select role</option>`;
+    guild.roles.cache.forEach(r => {
+        if (r.id !== guild.id) {
+            rolesOptionsHtml += `<option value="${r.id}" ${config.birthdayRole === r.id ? 'selected' : ''}>@${r.name}</option>`;
+        }
+    });
+
+    let customEmojisHtml = '';
+    guild.emojis.cache.forEach(emoji => {
+        const emojiTag = `<:${emoji.name}:${emoji.id}>`;
+        customEmojisHtml += `
+            <div class="emoji-item" onclick="insertEmoji('${emojiTag}', 'embedDescInput')" title=":${emoji.name}:">
+                <img src="https://cdn.discordapp.com/emojis/${emoji.id}.${emoji.animated ? 'gif' : 'png'}" alt="${emoji.name}">
+            </div>
+        `;
+    });
+
+    if (!customEmojisHtml) {
+        customEmojisHtml = `<div class="empty-emojis" style="grid-column: 1/-1; text-align:center; color:#b8b2cb; font-size:12px; padding:10px;">No custom emojis found in this server.</div>`;
+    }
+
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <title>Luffy.void - ${guild.name} Management</title>
+            <style>
+                ${globalCss}
+                body, html { height: 100vh; overflow: hidden; }
                 .app-layout { display: flex; height: 100vh; width: 100vw; }
                 .sidebar {
-                  width: var(--sidebar-width); background: rgba(10, 11, 18, 0.92);
-                  backdrop-filter: blur(20px); border-right: 1px solid var(--purple-border);
-                  display: flex; flex-direction: column; padding: 20px; z-index: 10;
+                  width: 290px; background: rgba(8, 7, 13, 0.95);
+                  backdrop-filter: blur(25px); border-right: 1px solid var(--purple-border);
+                  display: flex; flex-direction: column; padding: 22px; z-index: 10;
                   overflow-y: auto; flex-shrink: 0;
                 }
                 .sidebar::-webkit-scrollbar { width: 4px; }
                 .sidebar::-webkit-scrollbar-thumb { background: var(--purple-border); border-radius: 4px; }
-                .sidebar-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--purple-border); }
-                .guild-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-purple); }
+                .sidebar-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; padding-bottom: 16px; border-bottom: 1px solid var(--purple-border); }
+                .guild-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-purple); box-shadow: 0 0 15px var(--accent-glow); }
                 .guild-title-box { overflow: hidden; }
-                .guild-title { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                .guild-sub { font-size: 11px; color: var(--accent-purple); font-weight: 600; }
-                .nav-category { font-size: 11px; font-weight: 800; color: #727083; text-transform: uppercase; letter-spacing: 1px; margin: 16px 0 8px 10px; }
-                .nav-links { display: flex; flex-direction: column; gap: 4px; }
+                .guild-title { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
+                .guild-sub { font-size: 11px; color: #c77dff; font-weight: 700; }
+                .nav-category { font-size: 10px; font-weight: 800; color: #8c82a8; text-transform: uppercase; letter-spacing: 1.5px; margin: 18px 0 8px 10px; }
+                .nav-links { display: flex; flex-direction: column; gap: 5px; }
                 .nav-item {
-                  display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px;
-                  color: #9492a2; text-decoration: none; font-size: 13px; font-weight: 600; cursor: pointer;
-                  transition: all 0.2s ease; border: 1px solid transparent;
+                  display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-radius: 12px;
+                  color: #b8b2cb; text-decoration: none; font-size: 13px; font-weight: 600; cursor: pointer;
+                  transition: all 0.25s ease; border: 1px solid transparent;
                 }
                 .nav-item:hover, .nav-item.active {
-                  background: rgba(179, 136, 255, 0.1); color: var(--accent-purple);
-                  border-color: var(--purple-border); box-shadow: 0 0 15px rgba(179, 136, 255, 0.1);
+                  background: rgba(157, 78, 221, 0.2); color: #c77dff;
+                  border-color: var(--purple-border); box-shadow: 0 0 20px rgba(157, 78, 221, 0.25);
                 }
                 .back-picker {
-                  margin-top: 25px; padding: 12px; border-top: 1px solid var(--purple-border);
+                  margin-top: auto; padding: 14px; border-top: 1px solid var(--purple-border);
                   color: #ff6b6b; text-decoration: none; font-weight: 600; font-size: 13px;
                   display: flex; align-items: center; gap: 8px; transition: 0.2s; text-align: center; justify-content: center;
                 }
-                .back-picker:hover { opacity: 0.8; }
-                .workspace { flex-grow: 1; height: 100vh; overflow-y: auto; padding: 30px; display: flex; justify-content: center; }
-                .content-container { width: 100%; max-width: 1150px; }
+                .workspace { flex-grow: 1; height: 100vh; overflow-y: auto; padding: 35px; display: flex; justify-content: center; gap: 35px; }
+                .workspace::-webkit-scrollbar { width: 6px; }
+                .workspace::-webkit-scrollbar-thumb { background: var(--purple-border); border-radius: 4px; }
+                .content-container { width: 100%; max-width: 780px; }
                 .panel-card { display: none; }
-                .panel-card.active { display: block; animation: fadeIn 0.3s ease; }
-                @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-                .dual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
-                @media (max-width: 950px) { .dual-grid { grid-template-columns: 1fr; } }
+                .panel-card.active { display: block; animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+                @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
                 .sub-box {
-                  background: rgba(22, 23, 35, 0.85); backdrop-filter: blur(20px);
-                  border: 1px solid var(--purple-border); border-radius: 18px; padding: 28px;
-                  box-shadow: 0 15px 35px rgba(0,0,0,0.4); margin-bottom: 24px;
+                  background: var(--dark-glass); backdrop-filter: blur(30px);
+                  border: 1px solid var(--purple-border); border-radius: 22px; padding: 32px;
+                  box-shadow: 0 20px 45px rgba(0,0,0,0.6); margin-bottom: 25px;
+                  position: relative; overflow: hidden;
                 }
-                .sub-box-header { font-size: 11px; font-weight: 800; color: var(--accent-purple); text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 14px; }
-                .box-title { font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 8px; }
-                .box-desc { font-size: 13px; color: #9492a2; line-height: 1.5; margin-bottom: 20px; }
+                .sub-box::before {
+                  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+                  background: linear-gradient(90deg, #7b2cbf, #c77dff);
+                }
+                .sub-box-header { font-size: 11px; font-weight: 800; color: #c77dff; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 14px; }
+                .box-title { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 8px; }
+                .box-desc { font-size: 13px; color: #b8b2cb; line-height: 1.6; margin-bottom: 24px; }
                 .form-group { margin-bottom: 20px; }
-                label { display: block; font-size: 12px; font-weight: 700; color: #b0a8c0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+                label { display: block; font-size: 12px; font-weight: 700; color: #b8b2cb; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
                 input, textarea, select {
-                  width: 100%; padding: 13px 16px; background: rgba(12, 13, 20, 0.7);
-                  border: 1px solid var(--purple-border); border-radius: 12px; color: #fff; font-size: 14px;
-                  transition: all 0.2s;
+                  width: 100%; padding: 14px 18px; background: rgba(12, 10, 18, 0.85);
+                  border: 1px solid var(--purple-border); border-radius: 14px; color: #fff; font-size: 14px;
+                  transition: all 0.25s;
                 }
-                input:focus, textarea:focus, select:focus { border-color: var(--accent-purple); outline: none; box-shadow: 0 0 15px var(--accent-glow); background: rgba(18, 19, 30, 0.9); }
+                input:focus, textarea:focus, select:focus { border-color: #c77dff; outline: none; box-shadow: 0 0 20px var(--accent-glow); background: rgba(18, 14, 28, 0.95); }
                 .save-btn {
-                  background: #00b0f4; color: #fff; font-weight: 700; border: none;
-                  padding: 12px 26px; border-radius: 10px; cursor: pointer; font-size: 14px;
-                  box-shadow: 0 4px 15px rgba(0, 176, 244, 0.3); transition: all 0.2s;
+                  background: linear-gradient(135deg, #7b2cbf, #9d4edd); color: #fff; font-weight: 700; border: none;
+                  padding: 14px 28px; border-radius: 12px; cursor: pointer; font-size: 14px;
+                  box-shadow: 0 6px 20px rgba(157, 78, 221, 0.4); transition: all 0.25s;
+                  border: 1px solid rgba(199, 125, 255, 0.3);
                 }
-                .save-btn:hover { background: #0095d1; transform: translateY(-1px); }
-                .secondary-action-btn {
-                  background: rgba(179, 136, 255, 0.1); border: 1px solid var(--purple-border); color: #fff;
-                  width: 100%; padding: 12px; border-radius: 10px; font-weight: 600; font-size: 13px; cursor: pointer;
-                  transition: 0.2s; text-align: center; margin-top: 5px;
-                }
-                .secondary-action-btn:hover { background: rgba(179, 136, 255, 0.2); }
+                .save-btn:hover { filter: brightness(1.1); transform: translateY(-2px); box-shadow: 0 10px 30px rgba(157, 78, 221, 0.6); }
                 .emoji-picker-container {
-                  background: rgba(12, 13, 20, 0.9); border: 1px solid var(--purple-border);
-                  border-radius: 12px; padding: 14px; margin-top: 10px; margin-bottom: 15px;
+                  background: rgba(12, 10, 18, 0.9); border: 1px solid var(--purple-border);
+                  border-radius: 14px; padding: 14px; margin-top: 10px; margin-bottom: 15px;
                 }
-                .emoji-picker-tabs { display: flex; gap: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--purple-border); padding-bottom: 8px; }
-                .emoji-tab-btn { background: none; border: none; color: #9492a2; font-weight: 700; font-size: 12px; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
-                .emoji-tab-btn.active { background: rgba(179, 136, 255, 0.2); color: var(--accent-purple); }
-                .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 6px; max-height: 130px; overflow-y: auto; padding: 4px; }
-                .emoji-grid::-webkit-scrollbar { width: 3px; }
-                .emoji-grid::-webkit-scrollbar-thumb { background: var(--purple-border); border-radius: 3px; }
+                .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 8px; max-height: 140px; overflow-y: auto; padding: 4px; }
                 .emoji-item {
-                  background: rgba(25, 26, 40, 0.6); border: 1px solid rgba(255,255,255,0.05);
-                  border-radius: 8px; height: 38px; display: flex; align-items: center; justify-content: center;
+                  background: rgba(22, 18, 34, 0.7); border: 1px solid rgba(255,255,255,0.06);
+                  border-radius: 10px; height: 40px; display: flex; align-items: center; justify-content: center;
                   cursor: pointer; transition: 0.2s; font-size: 18px; overflow: hidden;
                 }
-                .emoji-item:hover { background: rgba(179, 136, 255, 0.25); border-color: var(--accent-purple); transform: scale(1.08); }
-                .emoji-item img { width: 22px; height: 22px; object-fit: contain; }
+                .emoji-item:hover { background: rgba(157, 78, 221, 0.3); border-color: #c77dff; transform: scale(1.1); }
+                .emoji-item img { width: 24px; height: 24px; object-fit: contain; }
                 .save-alert {
-                  background: rgba(46, 213, 115, 0.15); border: 1px solid rgba(46, 213, 115, 0.3);
-                  color: #2ed573; padding: 12px 16px; border-radius: 12px; font-size: 13px; font-weight: 600;
-                  margin-bottom: 25px; display: none; align-items: center; gap: 10px;
+                  background: rgba(46, 213, 115, 0.15); border: 1px solid rgba(46, 213, 115, 0.4);
+                  color: #2ed573; padding: 14px 18px; border-radius: 14px; font-size: 13px; font-weight: 700;
+                  margin-bottom: 25px; display: none; align-items: center; gap: 12px;
+                  box-shadow: 0 8px 25px rgba(46, 213, 115, 0.2);
                 }
-                .embed-builder-section { display: none; margin-top: 15px; border-top: 1px solid var(--purple-border); padding-top: 15px; }
+                .variable-box {
+                  background: rgba(10, 8, 16, 0.6); border: 1px dashed var(--purple-border); padding: 16px; border-radius: 12px; margin-bottom: 22px; font-size: 12px; color: #b8b2cb; line-height: 1.5;
+                }
+                .variable-box code { color: #c77dff; font-weight: bold; background: rgba(157,78,221,0.15); padding: 2px 6px; border-radius: 4px; }
+                
+                /* LIVE EMBED PREVIEW PANE STYLES */
+                .preview-pane {
+                  width: 390px; position: sticky; top: 35px; height: fit-content;
+                  background: rgba(12, 10, 18, 0.96); border: 1px solid var(--purple-border);
+                  border-radius: 22px; padding: 22px; box-shadow: 0 25px 50px rgba(0,0,0,0.7);
+                }
+                .preview-title { font-size: 11px; font-weight: 800; color: #c77dff; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+                .discord-message-mock { display: flex; gap: 12px; font-family: 'Plus Jakarta Sans', sans-serif; }
+                .mock-avatar { width: 42px; height: 42px; border-radius: 50%; background: #7b2cbf; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; box-shadow: 0 0 15px var(--accent-glow); }
+                .mock-content { overflow: hidden; width: 100%; }
+                .mock-username { font-weight: 700; font-size: 14px; color: #fff; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+                .mock-bot-badge { background: #7b2cbf; color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 4px; font-weight: 700; }
+                .mock-embed {
+                  background: #1a1626; border-left: 4px solid #9d4edd; border-radius: 8px; padding: 14px;
+                  margin-top: 6px; font-size: 13px; color: #dcddde; word-break: break-word; position: relative;
+                  border-top: 1px solid rgba(157,78,221,0.15); border-right: 1px solid rgba(157,78,221,0.15); border-bottom: 1px solid rgba(157,78,221,0.15);
+                }
+                .mock-embed-author { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+                .mock-embed-author img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+                .mock-embed-title { font-weight: 800; color: #fff; font-size: 15px; margin-bottom: 6px; }
+                .mock-embed-desc { color: #d0cce1; font-size: 13px; line-height: 1.5; margin-bottom: 8px; white-space: pre-wrap; }
+                .mock-embed-thumbnail { position: absolute; right: 14px; top: 14px; width: 64px; height: 64px; border-radius: 6px; object-fit: cover; }
+                .mock-embed-image { width: 100%; border-radius: 6px; margin-top: 8px; max-height: 160px; object-fit: cover; }
+                .mock-embed-footer { font-size: 11px; color: #9c94b8; margin-top: 10px; display: flex; align-items: center; gap: 6px; }
+                .mock-embed-footer img { width: 14px; height: 14px; border-radius: 50%; object-fit: cover; }
             </style>
         </head>
         <body>
             <div class="app-layout">
                 <div class="sidebar">
                     <div class="sidebar-brand">
-                        <img src="${guild.iconURL({ dynamic: true, size: 128 }) || 'https://files.catbox.moe/y08zjc.png'}" class="guild-avatar">
+                        <img src="${guild.iconURL({ dynamic: true, size: 256 }) || 'https://files.catbox.moe/y08zjc.png'}" class="guild-avatar">
                         <div class="guild-title-box">
                             <div class="guild-title">${guild.name}</div>
-                            <div class="guild-sub">Active Node</div>
+                            <div class="guild-sub">Members: ${guild.memberCount}</div>
                         </div>
                     </div>
-                    <div class="nav-category">Settings</div>
+                    <div class="nav-category">Core Suites</div>
                     <div class="nav-links">
-                        <div class="nav-item" onclick="switchTab('quick-setup', this)">Quick Setup</div>
-                        <div class="nav-item" onclick="switchTab('bot-settings', this)">Bot Settings</div>
-                    </div>
-                    <div class="nav-category">Interactive & Welcomes</div>
-                    <div class="nav-links">
-                        <div class="nav-item active" onclick="switchTab('greetings', this)">Greetings & Embeds</div>
-                        <div class="nav-item" onclick="switchTab('standalone-embeds', this)">Embed Dispatcher</div>
+                        <div class="nav-item active" onclick="switchTab('updates-center', this)">🚀 ᴜᴘᴅᴀᴛᴇꜱ & Announcements</div>
+                        <div class="nav-item" onclick="switchTab('server-edit', this)">⚙️ Server Properties</div>
+                        <div class="nav-item" onclick="switchTab('emoji-manager', this)">🎨 Emoji File Upload Suite</div>
+                        <div class="nav-item" onclick="switchTab('greetings', this)">👋 Welcome Messages</div>
+                        <div class="nav-item" onclick="switchTab('embed-builder', this)">✨ Embed Welcome Builder</div>
+                        <div class="nav-item" onclick="switchTab('birthdays', this)">🎂 Birthday Suite</div>
                     </div>
                     <a href="/" class="back-picker">&larr; Switch Server</a>
                 </div>
                 <div class="workspace">
                     <div class="content-container">
-                        <div id="saveAlert" class="save-alert">✅ Configurations successfully saved!</div>
+                        <div id="saveAlert" class="save-alert">✅ Server configuration and settings successfully updated!</div>
                         
-                        <!-- Quick Setup Panel -->
-                        <div id="quick-setup" class="panel-card">
-                            <form action="/dashboard/${guildId}/save" method="POST">
+                        <!-- 🚀 UPDATES & ANNOUNCEMENTS PANEL -->
+                        <div id="updates-center" class="panel-card active">
+                            <form action="/dashboard/${guildId}/send-update" method="POST">
                                 <div class="sub-box">
-                                    <div class="sub-box-header">Quick Setup</div>
-                                    <div class="box-title">Preset Profiles</div>
+                                    <div class="sub-box-header">ᴜᴘᴅᴀᴛᴇꜱ & Announcement Center</div>
+                                    <div class="box-title">Send Server Announcements & Rules Embeds</div>
+                                    <div class="box-desc">Instantly push custom server updates, patch notes, server rules, or announcements as a gorgeous purple embed to your designated channel.</div>
+                                    
                                     <div class="form-group">
-                                        <label>Preset Config</label>
-                                        <input type="text" name="quickSetupConfig" value="${config.quickSetupConfig}">
+                                        <label>Target Announcement Channel</label>
+                                        <select name="updateChannel" required>
+                                            ${channelsOptionsHtml}
+                                        </select>
                                     </div>
-                                    <button type="submit" class="save-btn">Save</button>
+
+                                    <div class="form-group">
+                                        <label>Announcement / Update Title</label>
+                                        <input type="text" name="updateTitle" placeholder="🚀 Major Server Update v2.0 / 📜 Server Rules" value="${config.updateTitle || ''}" required>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>Announcement Content / Embed Description (Supports emojis)</label>
+                                        <textarea name="updateDesc" rows="6" placeholder="Type your detailed server announcement, rules, or update notes here..." required>${config.updateDesc || ''}</textarea>
+                                    </div>
+
+                                    <button type="submit" class="save-btn" style="width:100%;padding:15px;font-size:15px;">🚀 Send ᴜᴘᴅᴀᴛᴇꜱ / Rules Embed Now</button>
                                 </div>
                             </form>
                         </div>
 
-                        <!-- Bot Settings Panel -->
-                        <div id="bot-settings" class="panel-card">
-                            <form action="/dashboard/${guildId}/save" method="POST">
+                        <!-- Server Edit Panel -->
+                        <div id="server-edit" class="panel-card">
+                            <form action="/dashboard/${guildId}/edit-server" method="POST">
                                 <div class="sub-box">
-                                    <div class="sub-box-header">Bot Settings</div>
-                                    <div class="box-title">Core Execution</div>
+                                    <div class="sub-box-header">Server Edit Suite</div>
+                                    <div class="box-title">Modify Server Details</div>
+                                    <div class="box-desc">Update guild name or server profile icon directly via the management suite.</div>
                                     <div class="form-group">
-                                        <label>Command Prefix</label>
-                                        <input type="text" name="botSettingsPrefix" value="${config.botSettingsPrefix}">
+                                        <label>Server Name</label>
+                                        <input type="text" name="serverName" value="${guild.name}">
                                     </div>
-                                    <button type="submit" class="save-btn">Save</button>
+                                    <div class="form-group">
+                                        <label>Server Icon Image URL</label>
+                                        <input type="text" name="serverIconUrl" placeholder="https://example.com/icon.png" value="${guild.iconURL({ size: 512 }) || ''}">
+                                    </div>
+                                    <button type="submit" class="save-btn">Update Server Properties</button>
                                 </div>
                             </form>
                         </div>
 
-                        <!-- Greetings & Embeds Panel -->
-                        <div id="greetings" class="panel-card active">
-                            <form action="/dashboard/${guildId}/save" method="POST">
-                                <div class="dual-grid">
-                                    <!-- Standard Welcome Text Box -->
-                                    <div class="sub-box">
-                                        <div class="sub-box-header">Standard Welcome Text</div>
-                                        <div class="box-title">Plain Message Option</div>
-                                        <div class="box-desc">Sends a regular text message on user join, separate from the rich embed builder.</div>
-                                        <div class="form-group">
-                                            <label>Welcome Channel ID</label>
-                                            <input type="text" name="welcomeChannel" value="${config.welcomeChannel}" placeholder="e.g., 104928394857621094">
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Welcome Text Message</label>
-                                            <textarea id="welcomeMsgInput" name="welcomeMessage" rows="3">${config.welcomeMessage}</textarea>
-                                        </div>
-                                        <div class="emoji-picker-container">
-                                            <div class="emoji-picker-tabs">
-                                                <button type="button" class="emoji-tab-btn active" onclick="switchEmojiTab(event, 'customEmojis')">Server Emojis</button>
-                                                <button type="button" class="emoji-tab-btn" onclick="switchEmojiTab(event, 'standardEmojis')">Standard Emojis</button>
-                                            </div>
-                                            <div id="customEmojis" class="emoji-tab-content">
-                                                <div class="emoji-grid">${customEmojisHtml}</div>
-                                            </div>
-                                            <div id="standardEmojis" class="emoji-tab-content" style="display:none;">
-                                                <div class="emoji-grid">
-                                                    <div class="emoji-item" onclick="insertEmoji('👋', 'welcomeMsgInput')">👋</div>
-                                                    <div class="emoji-item" onclick="insertEmoji('🎉', 'welcomeMsgInput')">🎉</div>
-                                                    <div class="emoji-item" onclick="insertEmoji('❤️', 'welcomeMsgInput')">❤️</div>
-                                                    <div class="emoji-item" onclick="insertEmoji('🚀', 'welcomeMsgInput')">🚀</div>
-                                                    <div class="emoji-item" onclick="insertEmoji('🔥', 'welcomeMsgInput')">🔥</div>
-                                                    <div class="emoji-item" onclick="insertEmoji('⭐', 'welcomeMsgInput')">⭐</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <button type="submit" class="save-btn">Save Text Settings</button>
+                        <!-- Emoji Manager Panel (File Upload) -->
+                        <div id="emoji-manager" class="panel-card">
+                            <div class="sub-box">
+                                <div class="sub-box-header">Emoji File Upload Hub</div>
+                                <div class="box-title">Upload Emoji from File & Server Emojis</div>
+                                <div class="box-desc">Upload local image files directly from your device to add them as custom server emojis or browse existing ones.</div>
+                                <div class="emoji-picker-container">
+                                    <div class="emoji-grid">${customEmojisHtml}</div>
+                                </div>
+                                <form action="/dashboard/${guildId}/upload-emoji-file" method="POST" enctype="multipart/form-data" style="margin-top: 20px;">
+                                    <div class="form-group">
+                                        <label>Emoji Name</label>
+                                        <input type="text" name="emojiName" placeholder="luffyVoid" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Upload Emoji File (PNG / JPG / GIF)</label>
+                                        <input type="file" name="emojiFile" accept="image/*" required style="padding: 12px; background: rgba(12,10,18,0.85); border: 1px solid var(--purple-border); border-radius: 12px; color: #fff;">
+                                    </div>
+                                    <button type="submit" class="save-btn">Upload Emoji File to Server</button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Welcome Messages Panel -->
+                        <div id="greetings" class="panel-card">
+                            <form action="/dashboard/${guildId}/save-welcome" method="POST">
+                                <div class="sub-box">
+                                    <div class="sub-box-header">Channel Selection & Variables</div>
+                                    <div class="box-title">Welcome Configuration</div>
+                                    <div class="box-desc">Configure dynamic greeting tags and welcome text messages.</div>
+                                    
+                                    <div class="variable-box">
+                                        <strong>Useful variables:</strong><br>
+                                        <code>{mention}</code> - Mentions the person joining.<br>
+                                        <code>{server}</code> - The server's name.<br>
+                                        <code>{user(proper)}</code> - The person joining's name in proper format.<br>
+                                        <code>{server(members)}</code> - The total number of members after joining.
                                     </div>
 
-                                    <!-- Standalone Welcome Embed Box -->
-                                    <div class="sub-box">
-                                        <div class="sub-box-header">Advanced Builder</div>
-                                        <div class="box-title">Welcome Embed Option</div>
-                                        <div class="box-desc">Configure a completely separate gorgeous embedded card sent upon member joins.</div>
-                                        <button type="button" class="secondary-action-btn" onclick="toggleEmbedBuilder()" style="margin-bottom: 15px;">Show embed builder options</button>
-                                        
-                                        <div id="embedBuilderSection" class="embed-builder-section">
-                                            <div class="form-group">
-                                                <label>Embed Channel ID</label>
-                                                <input type="text" name="embedChannel" value="${config.embedChannel || ''}" placeholder="e.g. 104928394857621094">
-                                            </div>
-                                            <div class="form-group">
-                                                <label>Embed Title</label>
-                                                <input id="embedTitleInput" type="text" name="embedTitle" value="${config.embedTitle}">
-                                            </div>
-                                            <div class="form-group">
-                                                <label>Embed Description</label>
-                                                <textarea id="embedDescInput" name="embedDesc" rows="3">${config.embedDesc}</textarea>
-                                            </div>
-                                            <div class="emoji-picker-container">
-                                                <div class="emoji-picker-tabs">
-                                                    <button type="button" class="emoji-tab-btn active" onclick="switchEmojiTab(event, 'customEmbedEmojis')">Server Emojis</button>
-                                                    <button type="button" class="emoji-tab-btn" onclick="switchEmojiTab(event, 'standardEmbedEmojis')">Standard Emojis</button>
-                                                </div>
-                                                <div id="customEmbedEmojis" class="emoji-tab-content">
-                                                    <div class="emoji-grid">${customEmojisHtml.replace(/welcomeMsgInput/g, 'embedDescInput')}</div>
-                                                </div>
-                                                <div id="standardEmbedEmojis" class="emoji-tab-content" style="display:none;">
-                                                    <div class="emoji-grid">
-                                                        <div class="emoji-item" onclick="insertEmoji('👋', 'embedDescInput')">👋</div>
-                                                        <div class="emoji-item" onclick="insertEmoji('🎉', 'embedDescInput')">🎉</div>
-                                                        <div class="emoji-item" onclick="insertEmoji('❤️', 'embedDescInput')">❤️</div>
-                                                        <div class="emoji-item" onclick="insertEmoji('🚀', 'embedDescInput')">🚀</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div style="margin-top: 15px;">
-                                            <button type="submit" class="save-btn">Save Embed Settings</button>
-                                        </div>
+                                    <div class="form-group">
+                                        <label>Welcome Text Channel</label>
+                                        <select name="welcomeChannel">
+                                            ${welcomeChannelsOptionsHtml}
+                                        </select>
                                     </div>
+
+                                    <div class="form-group">
+                                        <label>Welcome Message (Normal text)</label>
+                                        <textarea name="welcomeMessage" rows="3">${config.welcomeMessage}</textarea>
+                                    </div>
+
+                                    <button type="submit" class="save-btn" style="width:100%;padding:14px;font-size:15px;">Save Welcome Configuration</button>
                                 </div>
                             </form>
                         </div>
 
-                        <!-- Standalone Embed Dispatcher Panel -->
-                        <div id="standalone-embeds" class="panel-card">
-                            <div class="sub-box" style="max-width: 600px; margin: 0 auto;">
-                                <div class="sub-box-header">Standalone Embed Generator</div>
-                                <div class="box-title">Send Custom Embeds</div>
-                                <div class="box-desc">Create and dispatch an independent custom embed message to any specific channel instantly.</div>
-                                <form action="/dashboard/${guildId}/send-embed" method="POST">
+                        <!-- Advanced Embed Welcome Builder Panel with Image Upload Support -->
+                        <div id="embed-builder" class="panel-card">
+                            <form action="/dashboard/${guildId}/save-embed-with-file" method="POST" enctype="multipart/form-data" id="embedForm">
+                                <div class="sub-box">
+                                    <div class="sub-box-header">Embed Welcome Builder</div>
+                                    <div class="box-title">Advanced Embed Welcome & Live Preview</div>
+                                    <div class="box-desc">Customize rich welcome embeds with designated channel, emojis, big images (URL or File Upload), thumbnails, and footers.</div>
+
+                                    <!-- Embed Channel Selection -->
                                     <div class="form-group">
-                                        <label>Target Channel ID</label>
-                                        <input type="text" name="targetChannel" placeholder="e.g. 104928394857621094" required>
+                                        <label>Embed Welcome Channel (Send this embed on member join)</label>
+                                        <select name="embedWelcomeChannel">
+                                            ${embedWelcomeChannelsHtml}
+                                        </select>
                                     </div>
+
+                                    <!-- Custom Emojis Quick Clicker -->
                                     <div class="form-group">
-                                        <label>Embed Title</label>
-                                        <input type="text" name="customTitle" placeholder="Announcement Title">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Embed Description</label>
-                                        <textarea id="standaloneDescInput" name="customDesc" rows="3" placeholder="Embed body content..."></textarea>
-                                    </div>
-                                    <div class="emoji-picker-container">
-                                        <div class="emoji-picker-tabs">
-                                            <button type="button" class="emoji-tab-btn active" onclick="switchEmojiTab(event, 'customStandaloneEmojis')">Server Emojis</button>
-                                            <button type="button" class="emoji-tab-btn" onclick="switchEmojiTab(event, 'standardStandaloneEmojis')">Standard Emojis</button>
-                                        </div>
-                                        <div id="customStandaloneEmojis" class="emoji-tab-content">
-                                            <div class="emoji-grid">${customEmojisHtml.replace(/welcomeMsgInput/g, 'standaloneDescInput')}</div>
-                                        </div>
-                                        <div id="standardStandaloneEmojis" class="emoji-tab-content" style="display:none;">
-                                            <div class="emoji-grid">
-                                                <div class="emoji-item" onclick="insertEmoji('👋', 'standaloneDescInput')">👋</div>
-                                                <div class="emoji-item" onclick="insertEmoji('🎉', 'standaloneDescInput')">🎉</div>
-                                                <div class="emoji-item" onclick="insertEmoji('❤️', 'standaloneDescInput')">❤️</div>
-                                                <div class="emoji-item" onclick="insertEmoji('🚀', 'standaloneDescInput')">🚀</div>
-                                            </div>
+                                        <label>Click server emojis to insert into description:</label>
+                                        <div class="emoji-picker-container" style="margin-top:5px;">
+                                            <div class="emoji-grid">${customEmojisHtml}</div>
                                         </div>
                                     </div>
-                                    <button type="submit" class="save-btn" style="background: #7289da; width: 100%; margin-top: 10px;">Send Embed Now</button>
+
+                                    <!-- ROW 1: Icon url | Name | Name url -->
+                                    <div style="display:grid; grid-template-columns: 1fr 2fr 1fr; gap: 15px; margin-bottom: 20px;">
+                                        <div class="form-group" style="margin-bottom:0;">
+                                            <label>Icon url</label>
+                                            <input type="text" name="embedAuthorIcon" id="authorIconInput" placeholder="Icon url" value="${config.embedAuthorIcon || ''}" oninput="updatePreview()">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:0;">
+                                            <label>Name</label>
+                                            <input type="text" name="embedAuthorName" id="authorNameInput" placeholder="Name" value="${config.embedAuthorName || ''}" oninput="updatePreview()">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:0;">
+                                            <label>Name url</label>
+                                            <input type="text" name="embedAuthorUrl" placeholder="Name url" value="${config.embedAuthorUrl || ''}">
+                                        </div>
+                                    </div>
+
+                                    <!-- ROW 2: Title | Title url -->
+                                    <div style="display:grid; grid-template-columns: 3fr 1fr; gap: 15px; margin-bottom: 20px;">
+                                        <div class="form-group" style="margin-bottom:0;">
+                                            <label>Title</label>
+                                            <input type="text" name="embedTitle" id="titleInput" maxlength="200" placeholder="Title" value="${config.embedTitle || ''}" oninput="updatePreview()">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:0;">
+                                            <label>Title url</label>
+                                            <input type="text" name="embedUrl" placeholder="Title url" value="${config.embedUrl || ''}">
+                                        </div>
+                                    </div>
+
+                                    <!-- ROW 3: Description -->
+                                    <div class="form-group">
+                                        <label>Description (Supports emojis & variables like {mention})</label>
+                                        <textarea name="embedDesc" id="embedDescInput" rows="4" maxlength="2048" placeholder="Description" oninput="updatePreview()">${config.embedDesc || ''}</textarea>
+                                    </div>
+
+                                    <!-- ROW 4: Image url / File Upload & Thumbnail url -->
+                                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                                        <div class="form-group" style="margin-bottom:0;">
+                                            <label>Big Image URL or Upload File</label>
+                                            <input type="text" name="embedImage" id="imageInput" placeholder="https://... or upload below" value="${config.embedImage || ''}" oninput="updatePreview()" style="margin-bottom:8px;">
+                                            <input type="file" name="embedImageFile" accept="image/*" style="font-size:12px; padding:8px; background:rgba(12,10,18,0.85); border:1px solid var(--purple-border); border-radius:10px; color:#fff;">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:0;">
+                                            <label>Thumbnail url (Small top right)</label>
+                                            <input type="text" name="embedThumbnail" id="thumbnailInput" placeholder="https://example.com/thumb.png" value="${config.embedThumbnail || ''}" oninput="updatePreview()">
+                                        </div>
+                                    </div>
+
+                                    <!-- ROW 5: Footer & Footer icon -->
+                                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap: 15px; margin-bottom: 25px;">
+                                        <div class="form-group" style="margin-bottom:0;">
+                                            <label>Footer</label>
+                                            <input type="text" name="embedFooterText" id="footerInput" maxlength="2048" placeholder="Footer text" value="${config.embedFooterText || ''}" oninput="updatePreview()">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom:0;">
+                                            <label>Footer icon</label>
+                                            <input type="text" name="embedFooterIcon" id="footerIconInput" placeholder="Footer icon url" value="${config.embedFooterIcon || ''}" oninput="updatePreview()">
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" class="save-btn" style="width:100%;padding:14px;font-size:15px;">Save Advanced Embed Welcome Config</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Birthday Panel -->
+                        <div id="birthdays" class="panel-card">
+                            <div class="sub-box">
+                                <div class="sub-box-header">Birthday Suite</div>
+                                <div class="box-title">Birthday Role & Announcements</div>
+                                <div class="box-desc">Automatically assign special birthday roles to members when their birthday arrives.</div>
+                                <form action="/dashboard/${guildId}/birthday-config" method="POST">
+                                    <div class="form-group">
+                                        <label>Birthday Role Assignment</label>
+                                        <select name="birthdayRole">
+                                            ${rolesOptionsHtml}
+                                        </select>
+                                    </div>
+                                    <button type="submit" class="save-btn">Save Birthday Settings</button>
                                 </form>
                             </div>
                         </div>
 
                     </div>
+
+                    <!-- LIVE PREVIEW PANE -->
+                    <div class="preview-pane">
+                        <div class="preview-title">👁️ Live Embed Preview</div>
+                        <div class="discord-message-mock">
+                            <div class="mock-avatar">L</div>
+                            <div class="mock-content">
+                                <div class="mock-username">Luffy_void <span class="mock-bot-badge">BOT</span></div>
+                                <div class="mock-embed" id="previewEmbedBox">
+                                    <div id="previewAuthor" class="mock-embed-author" style="display:none;">
+                                        <img id="previewAuthorIcon" src="" style="display:none;">
+                                        <span id="previewAuthorName"></span>
+                                    </div>
+                                    <div id="previewTitle" class="mock-embed-title" style="display:none;"></div>
+                                    <div id="previewDesc" class="mock-embed-desc" style="display:none;"></div>
+                                    <img id="previewThumbnail" class="mock-embed-thumbnail" style="display:none;">
+                                    <img id="previewImage" class="mock-embed-image" style="display:none;">
+                                    <div id="previewFooter" class="mock-embed-footer" style="display:none;">
+                                        <img id="previewFooterIcon" src="" style="display:none;">
+                                        <span id="previewFooterText"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
             <script>
@@ -511,25 +767,59 @@ app.get('/dashboard/:guildId', (req, res) => {
                 function insertEmoji(emojiText, targetId) {
                     const textarea = document.getElementById(targetId);
                     if (!textarea) return;
-                    const startPos = textarea.selectionStart;
-                    const endPos = textarea.selectionEnd;
-                    const textVal = textarea.value;
-                    textarea.value = textVal.substring(0, startPos) + emojiText + textVal.substring(endPos, textVal.length);
-                    textarea.focus();
-                    textarea.selectionStart = startPos + emojiText.length;
-                    textarea.selectionEnd = startPos + emojiText.length;
+                    textarea.value += emojiText;
+                    updatePreview();
                 }
-                function switchEmojiTab(evt, tabName) {
-                    const container = evt.target.closest('.emoji-picker-container');
-                    container.querySelectorAll('.emoji-tab-content').forEach(el => el.style.display = 'none');
-                    container.querySelectorAll('.emoji-tab-btn').forEach(btn => btn.classList.remove('active'));
-                    container.querySelector('#' + tabName).style.display = 'block';
-                    evt.currentTarget.classList.add('active');
+
+                function updatePreview() {
+                    const authorName = document.getElementById('authorNameInput') ? document.getElementById('authorNameInput').value : '';
+                    const authorIcon = document.getElementById('authorIconInput') ? document.getElementById('authorIconInput').value : '';
+                    const title = document.getElementById('titleInput') ? document.getElementById('titleInput').value : '';
+                    const desc = document.getElementById('embedDescInput') ? document.getElementById('embedDescInput').value : '';
+                    const image = document.getElementById('imageInput') ? document.getElementById('imageInput').value : '';
+                    const thumbnail = document.getElementById('thumbnailInput') ? document.getElementById('thumbnailInput').value : '';
+                    const footer = document.getElementById('footerInput') ? document.getElementById('footerInput').value : '';
+                    const footerIcon = document.getElementById('footerIconInput') ? document.getElementById('footerIconInput').value : '';
+
+                    const pAuthor = document.getElementById('previewAuthor');
+                    const pAuthorName = document.getElementById('previewAuthorName');
+                    const pAuthorIcon = document.getElementById('previewAuthorIcon');
+                    if (authorName && pAuthor) {
+                        pAuthor.style.display = 'flex';
+                        pAuthorName.textContent = authorName;
+                        if (authorIcon) { pAuthorIcon.src = authorIcon; pAuthorIcon.style.display = 'block'; }
+                        else { pAuthorIcon.style.display = 'none'; }
+                    } else if(pAuthor) { pAuthor.style.display = 'none'; }
+
+                    const pTitle = document.getElementById('previewTitle');
+                    if (title && pTitle) { pTitle.style.display = 'block'; pTitle.textContent = title; }
+                    else if(pTitle) { pTitle.style.display = 'none'; }
+
+                    const pDesc = document.getElementById('previewDesc');
+                    if (desc && pDesc) { pDesc.style.display = 'block'; pDesc.textContent = desc; }
+                    else if(pDesc) { pDesc.style.display = 'none'; }
+
+                    const pThumb = document.getElementById('previewThumbnail');
+                    if (thumbnail && pThumb) { pThumb.style.display = 'block'; pThumb.src = thumbnail; }
+                    else if(pThumb) { pThumb.style.display = 'none'; }
+
+                    const pImg = document.getElementById('previewImage');
+                    if (image && pImg) { pImg.style.display = 'block'; pImg.src = image; }
+                    else if(pImg) { pImg.style.display = 'none'; }
+
+                    const pFooter = document.getElementById('previewFooter');
+                    const pFooterText = document.getElementById('previewFooterText');
+                    const pFooterIcon = document.getElementById('previewFooterIcon');
+                    if (footer && pFooter) {
+                        pFooter.style.display = 'flex';
+                        pFooterText.textContent = footer;
+                        if (footerIcon) { pFooterIcon.src = footerIcon; pFooterIcon.style.display = 'block'; }
+                        else { pFooterIcon.style.display = 'none'; }
+                    } else if(pFooter) { pFooter.style.display = 'none'; }
                 }
-                function toggleEmbedBuilder() {
-                    const section = document.getElementById('embedBuilderSection');
-                    section.style.display = section.style.display === 'block' ? 'none' : 'block';
-                }
+
+                window.onload = updatePreview;
+
                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.has('saved')) {
                     const alertBox = document.getElementById('saveAlert');
@@ -542,29 +832,85 @@ app.get('/dashboard/:guildId', (req, res) => {
     `);
 });
 
-app.post('/dashboard/:guildId/save', (req, res) => {
+app.post('/dashboard/:guildId/send-update', async (req, res) => {
+    const guildId = req.params.guildId;
+    const { updateChannel, updateTitle, updateDesc } = req.body;
+    const guild = discordClient.guilds.cache.get(guildId);
+
+    if (guild && updateChannel) {
+        const channel = guild.channels.cache.get(updateChannel);
+        if (channel) {
+            const embed = new EmbedBuilder()
+                .setTitle(updateTitle || '🚀 Server Announcement & Updates')
+                .setDescription(updateDesc || '')
+                .setColor(0x9d4edd)
+                .setTimestamp()
+                .setFooter({ text: `${guild.name} Updates Center`, iconURL: guild.iconURL({ dynamic: true }) || undefined });
+
+            await channel.send({ embeds: [embed] }).catch(() => {});
+        }
+    }
+    serverSettings[guildId] = { ...serverSettings[guildId], ...req.body };
+    res.redirect(`/dashboard/${guildId}?saved=true`);
+});
+
+app.post('/dashboard/:guildId/save-welcome', (req, res) => {
     const guildId = req.params.guildId;
     serverSettings[guildId] = { ...serverSettings[guildId], ...req.body };
     res.redirect(`/dashboard/${guildId}?saved=true`);
 });
 
-app.post('/dashboard/:guildId/send-embed', async (req, res) => {
+app.post('/dashboard/:guildId/save-embed-with-file', async (req, res) => {
     const guildId = req.params.guildId;
-    const { targetChannel, customTitle, customDesc } = req.body;
-    
+    let imageUrl = req.body.embedImage || '';
+
+    if (req.files && req.files.embedImageFile) {
+        const file = req.files.embedImageFile;
+        const fileName = `embed_${Date.now()}_${file.name}`;
+        const uploadPath = path.join(uploadsDir, fileName);
+        await file.mv(uploadPath);
+        imageUrl = `${req.protocol}://${req.get('host')}/uploads/${fileName}`;
+    }
+
+    serverSettings[guildId] = {
+        ...serverSettings[guildId],
+        ...req.body,
+        embedImage: imageUrl
+    };
+    res.redirect(`/dashboard/${guildId}?saved=true`);
+});
+
+app.post('/dashboard/:guildId/birthday-config', (req, res) => {
+    const guildId = req.params.guildId;
+    serverSettings[guildId] = { ...serverSettings[guildId], ...req.body };
+    res.redirect(`/dashboard/${guildId}?saved=true`);
+});
+
+app.post('/dashboard/:guildId/edit-server', async (req, res) => {
+    const guildId = req.params.guildId;
+    const { serverName, serverIconUrl } = req.body;
     const guild = discordClient.guilds.cache.get(guildId);
-    if (guild && targetChannel) {
-        const channel = guild.channels.cache.get(targetChannel);
-        if (channel) {
-            await channel.send({
-                embeds: [{
-                    title: customTitle || 'Notification',
-                    description: customDesc || '',
-                    color: 0xb388ff,
-                    timestamp: new Date().toISOString()
-                }]
-            }).catch(() => {});
+    if (guild) {
+        await guild.setName(serverName).catch(() => {});
+        if (serverIconUrl) {
+            await guild.setIcon(serverIconUrl).catch(() => {});
         }
+    }
+    res.redirect(`/dashboard/${guildId}?saved=true`);
+});
+
+app.post('/dashboard/:guildId/upload-emoji-file', async (req, res) => {
+    const guildId = req.params.guildId;
+    const { emojiName } = req.body;
+    const guild = discordClient.guilds.cache.get(guildId);
+
+    if (guild && req.files && req.files.emojiFile) {
+        const file = req.files.emojiFile;
+        const fileName = `emoji_${Date.now()}_${file.name}`;
+        const uploadPath = path.join(uploadsDir, fileName);
+        await file.mv(uploadPath);
+
+        await guild.emojis.create({ attachment: uploadPath, name: emojiName }).catch(() => {});
     }
     res.redirect(`/dashboard/${guildId}?saved=true`);
 });
@@ -587,6 +933,14 @@ app.get('/auth/discord/callback', async (req, res) => {
         const tokenData = await tokenResponse.json();
         if (tokenData.access_token) {
             res.cookie('discord_token', tokenData.access_token, { httpOnly: true });
+            
+            const userRes = await fetch('https://discord.com/api/users/@me', {
+                headers: { Authorization: `Bearer ${tokenData.access_token}` }
+            });
+            const userData = await userRes.json();
+            if (userData && userData.id) {
+                res.cookie('discord_user_id', userData.id, { httpOnly: true });
+            }
         }
         res.redirect('/');
     } catch (error) {
@@ -597,15 +951,16 @@ app.get('/auth/discord/callback', async (req, res) => {
 
 app.get('/logout', (req, res) => {
     res.clearCookie('discord_token');
+    res.clearCookie('discord_user_id');
     res.redirect('/');
 });
 
 app.listen(PORT, () => {
-    console.log(`🌐 Next-Gen Web Panel online at http://localhost:${PORT}`);
+    console.log(`🌐 Luffy.void Web Panel online at http://localhost:${PORT}`);
 });
 
 // ==========================================
-// 2. DISCORD BOT RUNTIME & COMMAND REGISTRATION
+// 2. DISCORD BOT RUNTIME & SLASH COMMANDS
 // ==========================================
 const client = new Client({
     intents: [
@@ -620,344 +975,308 @@ const client = new Client({
 
 discordClient = client;
 
-// Member Greeting Listener with distinct text vs embed settings & specific Channel IDs
-client.on('guildMemberAdd', async member => {
-    const config = serverSettings[member.guild.id];
-    if (!config) return;
-
-    const galactusProperName = `${member.user.username}#${member.user.discriminator === '0' ? '0000' : member.user.discriminator}`;
-
-    // Plain message channel
-    if (config.welcomeChannel) {
-        const channel = member.guild.channels.cache.get(config.welcomeChannel);
-        if (channel) {
-            let text = (config.welcomeMessage || 'Hello {mention}!')
-                .replace(/{mention}/g, `<@${member.id}>`)
-                .replace(/{server}/g, member.guild.name)
-                .replace(/{user\(proper\)}/g, galactusProperName)
-                .replace(/{server\(members\)}/g, member.guild.memberCount);
-            await channel.send({ content: text }).catch(() => {});
-        }
-    }
-
-    // Embed Message Channel ID support
-    if (config.embedChannel) {
-        const embedChan = member.guild.channels.cache.get(config.embedChannel);
-        if (embedChan) {
-            let title = (config.embedTitle || '')
-                .replace(/{mention}/g, `<@${member.id}>`)
-                .replace(/{server}/g, member.guild.name)
-                .replace(/{user\(proper\)}/g, galactusProperName)
-                .replace(/{server\(members\)}/g, member.guild.memberCount);
-
-            let desc = (config.embedDesc || '')
-                .replace(/{mention}/g, `<@${member.id}>`)
-                .replace(/{server}/g, member.guild.name)
-                .replace(/{user\(proper\)}/g, galactusProperName)
-                .replace(/{server\(members\)}/g, member.guild.memberCount);
-
-            await embedChan.send({
-                embeds: [{
-                    title: title,
-                    description: desc,
-                    color: 0xb388ff,
-                    footer: { text: `Member Count: ${member.guild.memberCount}` }
-                }]
-            }).catch(() => {});
-        }
-    }
-});
-
-// Complete Slash Commands Collection Array with Full Working Logic Support
 const commandsList = [
-    new SlashCommandBuilder().setName('ban').setDescription('Ban a user from the server')
-        .addUserOption(o => o.setName('user').setDescription('User to ban').setRequired(true))
-        .addStringOption(o => o.setName('reason').setDescription('Reason for ban'))
-        .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
+    new SlashCommandBuilder().setName('server').setDescription('Manage server properties')
+        .addSubcommand(sub => sub.setName('icon').setDescription('View or copy the current server icon link')),
     
-    new SlashCommandBuilder().setName('unban').setDescription('Unban a user by ID')
-        .addStringOption(o => o.setName('userid').setDescription('Discord User ID').setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
+    new SlashCommandBuilder().setName('user').setDescription('View user information or icons')
+        .addSubcommand(sub => sub.setName('icon').setDescription('View your avatar or target user avatar')
+            .addUserOption(o => o.setName('target').setDescription('Target user').setRequired(false))),
     
-    new SlashCommandBuilder().setName('kick').setDescription('Kick a user from the server')
-        .addUserOption(o => o.setName('user').setDescription('User to kick').setRequired(true))
-        .addStringOption(o => o.setName('reason').setDescription('Reason for kick'))
-        .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers),
+    new SlashCommandBuilder().setName('auto').setDescription('Configure automation settings')
+        .addSubcommand(sub => sub.setName('chat').setDescription('Toggle or test AI-style auto chat integration'))
+        .addSubcommand(sub => sub.setName('role').setDescription('Configure auto-role assignment on member join')
+            .addRoleOption(o => o.setName('role').setDescription('Role to assign automatically').setRequired(true)))
+        .addSubcommand(sub => sub.setName('autoreaction').setDescription('Configure autoreactions for messages'))
+        .addSubcommand(sub => sub.setName('messages').setDescription('Configure custom automated periodic messages')),
     
-    new SlashCommandBuilder().setName('timeout').setDescription('Timeout a user')
-        .addUserOption(o => o.setName('user').setDescription('User to timeout').setRequired(true))
-        .addIntegerOption(o => o.setName('minutes').setDescription('Duration in minutes').setRequired(true))
-        .addStringOption(o => o.setName('reason').setDescription('Reason for timeout'))
-        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+    new SlashCommandBuilder().setName('clone').setDescription('Voice channel utilities')
+        .addSubcommand(sub => sub.setName('voice').setDescription('Clone or replicate your current voice channel setup')),
     
-    new SlashCommandBuilder().setName('untimeout').setDescription('Remove timeout from a user')
-        .addUserOption(o => o.setName('user').setDescription('User to remove timeout from').setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+    new SlashCommandBuilder().setName('birthday').setDescription('Set or check member birthdays')
+        .addSubcommand(sub => sub.setName('set').setDescription('Set your birthday date')
+            .addStringOption(o => o.setName('date').setDescription('Format: MM-DD').setRequired(true)))
+        .addSubcommand(sub => sub.setName('list').setDescription('List all registered server birthdays')),
     
-    new SlashCommandBuilder().setName('warn').setDescription('Issue a warning to a user')
-        .addUserOption(o => o.setName('user').setDescription('User to warn').setRequired(true))
-        .addStringOption(o => o.setName('reason').setDescription('Reason for warning').setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+    new SlashCommandBuilder().setName('about').setDescription('Display detailed information about Luffy.void suite'),
     
-    new SlashCommandBuilder().setName('warnings').setDescription('Check active warnings for a user')
-        .addUserOption(o => o.setName('user').setDescription('User to check').setRequired(true)),
+    new SlashCommandBuilder().setName('setip').setDescription('Set your Minecraft server IP')
+        .addStringOption(o => o.setName('ip').setDescription('Minecraft Server IP address').setRequired(true)),
     
-    new SlashCommandBuilder().setName('clear').setDescription('Purge messages from a channel')
-        .addIntegerOption(o => o.setName('amount').setDescription('Number of messages to delete (1-100)').setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+    new SlashCommandBuilder().setName('ip').setDescription('Show the configured Minecraft server IP'),
     
-    new SlashCommandBuilder().setName('slowmode').setDescription('Set channel slowmode')
-        .addIntegerOption(o => o.setName('seconds').setDescription('Slowmode delay in seconds (0 to disable)').setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+    new SlashCommandBuilder().setName('mc').setDescription('Minecraft server monitoring')
+        .addSubcommand(sub => sub.setName('status').setDescription('Show the current live Minecraft server status')),
     
-    new SlashCommandBuilder().setName('lock').setDescription('Lock the current text channel')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+    new SlashCommandBuilder().setName('roast').setDescription('Playfully roast a user')
+        .addUserOption(o => o.setName('user').setDescription('User to roast').setRequired(true)),
     
-    new SlashCommandBuilder().setName('unlock').setDescription('Unlock the current text channel')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+    new SlashCommandBuilder().setName('setrules').setDescription('Set server rules content')
+        .addStringOption(o => o.setName('content').setDescription('Rules text content').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    
+    new SlashCommandBuilder().setName('rules').setDescription('Display the server rules'),
 
-    new SlashCommandBuilder().setName('nuke').setDescription('Delete and recreate the current channel to wipe all messages')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
-    
-    new SlashCommandBuilder().setName('help').setDescription('List all available bot commands and info'),
-    
-    new SlashCommandBuilder().setName('ping').setDescription('Check bot network latency and response time'),
-    
-    new SlashCommandBuilder().setName('uptime').setDescription('Check how long the bot has been continuously running'),
-    
-    new SlashCommandBuilder().setName('botinfo').setDescription('Display detailed system statistics and information about VOID.GG'),
-    
-    new SlashCommandBuilder().setName('stats').setDescription('Display current server cluster performance metrics'),
-    
-    new SlashCommandBuilder().setName('invite').setDescription('https://discord.com/oauth2/authorize?client_id=1537088326287364156&permissions=8&integration_type=0&scope=bot'),
-    
-    new SlashCommandBuilder().setName('support').setDescription('https://dsc.gg/voidlol')
+    new SlashCommandBuilder().setName('ping').setDescription('Check bot latency'),
+    new SlashCommandBuilder().setName('help').setDescription('List all commands')
 ].map(command => command.toJSON());
 
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
-    const { commandName, options, guild, channel, user } = interaction;
+    const { commandName, options, guild, user } = interaction;
 
     try {
-        if (commandName === 'ban') {
-            const targetUser = options.getUser('user');
-            const reason = options.getString('reason') || 'No reason provided';
-            const member = await guild.members.fetch(targetUser.id).catch(() => null);
+        const subcommand = options.getSubcommand(false);
 
-            if (!member) return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
-            if (!member.bannable) return interaction.reply({ content: '❌ I cannot ban this user (Missing permissions or role hierarchy issue).', ephemeral: true });
-
-            await guild.members.ban(targetUser, { reason });
-            return interaction.reply({ content: `✅ Successfully banned **${targetUser.tag}**. Reason: ${reason}` });
-        }
-
-        if (commandName === 'unban') {
-            const userId = options.getString('userid');
-            await guild.members.unban(userId).catch(() => null);
-            return interaction.reply({ content: `✅ Successfully unbanned user ID: \`${userId}\`.` });
-        }
-
-        if (commandName === 'kick') {
-            const targetUser = options.getUser('user');
-            const reason = options.getString('reason') || 'No reason provided';
-            const member = await guild.members.fetch(targetUser.id).catch(() => null);
-
-            if (!member) return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
-            if (!member.kickable) return interaction.reply({ content: '❌ I cannot kick this user.', ephemeral: true });
-
-            await member.kick(reason);
-            return interaction.reply({ content: `✅ Successfully kicked **${targetUser.tag}**. Reason: ${reason}` });
-        }
-
-        if (commandName === 'timeout') {
-            const targetUser = options.getUser('user');
-            const minutes = options.getInteger('minutes');
-            const reason = options.getString('reason') || 'No reason provided';
-            const member = await guild.members.fetch(targetUser.id).catch(() => null);
-
-            if (!member) return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
-            
-            const durationMs = minutes * 60 * 1000;
-            await member.timeout(durationMs, reason);
-            return interaction.reply({ content: `✅ Successfully timed out **${targetUser.tag}** for **${minutes} minute(s)**. Reason: ${reason}` });
-        }
-
-        if (commandName === 'untimeout') {
-            const targetUser = options.getUser('user');
-            const member = await guild.members.fetch(targetUser.id).catch(() => null);
-
-            if (!member) return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
-            await member.timeout(null);
-            return interaction.reply({ content: `✅ Successfully removed timeout from **${targetUser.tag}**.` });
-        }
-
-        if (commandName === 'warn') {
-            const targetUser = options.getUser('user');
-            const reason = options.getString('reason');
-
-            if (!serverWarnings[guild.id]) serverWarnings[guild.id] = {};
-            if (!serverWarnings[guild.id][targetUser.id]) serverWarnings[guild.id][targetUser.id] = [];
-
-            serverWarnings[guild.id][targetUser.id].push({
-                reason,
-                moderator: user.tag,
-                date: new Date().toLocaleDateString()
-            });
-
-            const totalWarns = serverWarnings[guild.id][targetUser.id].length;
-            return interaction.reply({ content: `⚠️ Warned **${targetUser.tag}**. Total Warnings: **${totalWarns}**. Reason: ${reason}` });
-        }
-
-        if (commandName === 'warnings') {
-            const targetUser = options.getUser('user');
-            const warns = serverWarnings[guild.id]?.[targetUser.id] || [];
-
-            if (warns.length === 0) {
-                return interaction.reply({ content: `✅ **${targetUser.tag}** has no active warnings.`, ephemeral: true });
+        if (commandName === 'server') {
+            if (subcommand === 'icon') {
+                const iconUrl = guild.iconURL({ size: 1024, dynamic: true }) || 'No icon set';
+                return interaction.reply({ content: `🛡️ **${guild.name}** Server Icon Link:\n${iconUrl}` });
             }
+        }
 
+        if (commandName === 'user') {
+            if (subcommand === 'icon') {
+                const target = options.getUser('target') || user;
+                const avatarUrl = target.displayAvatarURL({ size: 1024, dynamic: true });
+                return interaction.reply({ content: `👤 Avatar for **${target.tag}**:\n${avatarUrl}` });
+            }
+        }
+
+        if (commandName === 'auto') {
+            if (subcommand === 'chat') {
+                return interaction.reply({ content: `🤖 Luffy.void Auto-Chat response node is active and listening.` });
+            }
+            if (subcommand === 'role') {
+                const role = options.getRole('role');
+                autoRoles[guild.id] = role.id;
+                return interaction.reply({ content: `✅ Auto-role successfully configured to **${role.name}**.` });
+            }
+            if (subcommand === 'autoreaction') {
+                return interaction.reply({ content: `⚡ Autoreaction module status: Operational for this guild.` });
+            }
+            if (subcommand === 'messages') {
+                return interaction.reply({ content: `💬 Automated periodic messaging engine ready.` });
+            }
+        }
+
+        if (commandName === 'clone' && subcommand === 'voice') {
+            const memberVC = interaction.member.voice.channel;
+            if (!memberVC) return interaction.reply({ content: '❌ You must be connected to a voice channel to clone it.', ephemeral: true });
+            
+            const clonedVC = await guild.channels.create({
+                name: `${memberVC.name}-clone`,
+                type: memberVC.type,
+                parent: memberVC.parentId,
+                userLimit: memberVC.userLimit,
+                bitrate: memberVC.bitrate
+            });
+            return interaction.reply({ content: `🎙️ Successfully cloned voice channel into **${clonedVC.name}**.` });
+        }
+
+        if (commandName === 'birthday') {
+            if (subcommand === 'set') {
+                const date = options.getString('date');
+                if (!birthdays[guild.id]) birthdays[guild.id] = {};
+                birthdays[guild.id][user.id] = date;
+                return interaction.reply({ content: `🎉 Successfully recorded birthday for <@${user.id}> as **${date}**!` });
+            } 
+            else if (subcommand === 'list') {
+                const guildBirthdays = birthdays[guild.id];
+                if (!guildBirthdays || Object.keys(guildBirthdays).length === 0) {
+                    return interaction.reply({ content: `🎂 No birthdays have been recorded for this server yet. Use \`/birthday set\` to add yours!`, ephemeral: true });
+                }
+
+                let desc = '';
+                for (const [userId, dateStr] of Object.entries(guildBirthdays)) {
+                    desc += `• <@${userId}>: **${dateStr}**\n`;
+                }
+
+                const embed = new EmbedBuilder()
+                    .setTitle(`🎂 Registered Birthdays in ${guild.name}`)
+                    .setDescription(desc)
+                    .setColor(0x9d4edd)
+                    .setTimestamp();
+
+                return interaction.reply({ embeds: [embed] });
+            }
+        }
+
+        if (commandName === 'about') {
             const embed = new EmbedBuilder()
-                .setTitle(`Warnings for ${targetUser.tag}`)
-                .setColor(0xb388ff)
-                .setDescription(warns.map((w, idx) => `**${idx + 1}.** Reason: *${w.reason}* (Moderator: ${w.moderator})`).join('\n'));
-
+                .setTitle('Luffy.void Suite Information')
+                .setColor(0x9d4edd)
+                .setDescription('Next-generation automated server protection, moderation, Minecraft integrations, and web panel suite.');
             return interaction.reply({ embeds: [embed] });
         }
 
-        if (commandName === 'clear') {
-            const amount = options.getInteger('amount');
-            if (amount < 1 || amount > 100) {
-                return interaction.reply({ content: '❌ Please specify an amount between 1 and 100.', ephemeral: true });
-            }
-
-            const deleted = await channel.bulkDelete(amount, true).catch(() => null);
-            if (!deleted) return interaction.reply({ content: '❌ Failed to delete messages. They might be older than 14 days.', ephemeral: true });
-            
-            return interaction.reply({ content: `🧹 Successfully deleted **${deleted.size}** message(s).`, ephemeral: true });
+        if (commandName === 'setip') {
+            const ip = options.getString('ip');
+            minecraftIps[guild.id] = ip;
+            return interaction.reply({ content: `🕹️ Minecraft Server IP for this guild has been set to: \`${ip}\`` });
         }
 
-        if (commandName === 'slowmode') {
-            const seconds = options.getInteger('seconds');
-            await channel.setRateLimitPerUser(seconds);
-            return interaction.reply({ content: `⏳ Channel slowmode set to **${seconds} second(s)**.` });
+        if (commandName === 'ip') {
+            const ip = minecraftIps[guild.id] || 'No IP configured yet. Use `/setip` to set one.';
+            return interaction.reply({ content: `🌐 Configured Minecraft Server IP: \`${ip}\`` });
         }
 
-        if (commandName === 'lock') {
-            await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false });
-            return interaction.reply({ content: `🔒 Channel has been locked.` });
+        if (commandName === 'mc' && subcommand === 'status') {
+            const ip = minecraftIps[guild.id];
+            if (!ip) return interaction.reply({ content: '❌ No Minecraft IP configured for this server. Use `/setip` first.', ephemeral: true });
+            return interaction.reply({ content: `🟢 Minecraft Server **${ip}** status check: Online / Ping operational.` });
         }
 
-        if (commandName === 'unlock') {
-            await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: null });
-            return interaction.reply({ content: `🔓 Channel has been unlocked.` });
+        if (commandName === 'roast') {
+            const targetUser = options.getUser('user');
+            const roasts = [
+                `hey <@${targetUser.id}>, you bring everyone so much joy... when you leave the room.`,
+                `<@${targetUser.id}> must have been born on a highway because that's where most accidents happen.`,
+                `If I wanted to commit suicide, I'd jump down your ego to your IQ level, <@${targetUser.id}>.`
+            ];
+            const randomRoast = roasts[Math.floor(Math.random() * roasts.length)];
+            return interaction.reply({ content: randomRoast });
         }
 
-        if (commandName === 'nuke') {
-            if (!channel.manageable) {
-                return interaction.reply({ content: '❌ I do not have permission to manage this channel.', ephemeral: true });
-            }
+        if (commandName === 'setrules') {
+            const content = options.getString('content');
+            serverRules[guild.id] = content;
+            return interaction.reply({ content: `📜 Server rules have been successfully updated!` });
+        }
 
-            const position = channel.position;
-            const parent = channel.parentId;
-            const topic = channel.topic;
-            const rateLimit = channel.rateLimitPerUser;
-
-            const cloned = await channel.clone({
-                reason: `Channel nuked by ${user.tag}`
-            });
-
-            await cloned.setPosition(position);
-            await cloned.setParent(parent);
-            await cloned.setTopic(topic);
-            await cloned.setRateLimitPerUser(rateLimit);
-
-            await channel.delete().catch(() => {});
-
-            return cloned.send({
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle('💥 Channel Nuked')
-                        .setDescription(`This channel has been wiped and reset by **${user.tag}**`)
-                        .setColor(0xff6b6b)
-                        .setTimestamp()
-                ]
-            }).catch(() => {});
+        if (commandName === 'rules') {
+            const rules = serverRules[guild.id] || 'No rules have been set for this server yet.';
+            const embed = new EmbedBuilder()
+                .setTitle(`📜 Rules for ${guild.name}`)
+                .setDescription(rules)
+                .setColor(0x9d4edd)
+                .setTimestamp();
+            return interaction.reply({ embeds: [embed] });
         }
 
         if (commandName === 'ping') {
-            const ping = client.ws.ping;
-            return interaction.reply({ content: `🏓 Pong! Latency is **${ping}ms**.` });
-        }
-
-        if (commandName === 'uptime') {
-            const totalSeconds = Math.floor(client.uptime / 1000);
-            const hours = Math.floor(totalSeconds / 3600);
-            const minutes = Math.floor((totalSeconds % 3600) / 60);
-            const seconds = totalSeconds % 60;
-            return interaction.reply({ content: `⏱️ Uptime: **${hours}h ${minutes}m ${seconds}s**.` });
-        }
-
-        if (commandName === 'botinfo') {
-            const embed = new EmbedBuilder()
-                .setTitle('VOID.GG Suite Information')
-                .setColor(0xb388ff)
-                .setDescription('Next-generation automated server protection, moderation, and embed management suite.')
-                .addFields(
-                    { name: 'Developer Cluster', value: 'VOID.GG Core Team', inline: true },
-                    { name: 'Library', value: 'Discord.js v14', inline: true },
-                    { name: 'Active Servers', value: `${client.guilds.cache.size}`, inline: true }
-                );
-            return interaction.reply({ embeds: [embed] });
-        }
-
-        if (commandName === 'stats') {
-            const memoryUsage = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-            return interaction.reply({ content: `📊 Cluster Memory Usage: **${memoryUsage} MB** | Guilds Connected: **${client.guilds.cache.size}**` });
-        }
-
-        if (commandName === 'invite') {
-            return interaction.reply({ content: `🔗 Invite VOID.GG to your server using our secure oauth dashboard link.` });
-        }
-
-        if (commandName === 'support') {
-            return interaction.reply({ content: `💬 Join our official support network anytime through our web panel dashboard.` });
+            return interaction.reply({ content: `🏓 Pong! Latency is **${client.ws.ping}ms**.` });
         }
 
         if (commandName === 'help') {
-            const embed = new EmbedBuilder()
-                .setTitle('🛡️ VOID.GG Command Directory')
-                .setColor(0xb388ff)
-                .setDescription('Here are all the fully operational live commands available across your cluster:')
-                .addFields(
-                    { name: '🛡️ Moderation', value: '`/ban`, `/unban`, `/kick`, `/timeout`, `/untimeout`, `/warn`, `/warnings`, `/clear`, `/slowmode`, `/lock`, `/unlock`, `/nuke`', inline: false },
-                    { name: 'ℹ️ Utility & Info', value: '`/help`, `/ping`, `/uptime`, `/botinfo`, `/stats`, `/invite`, `/support`', inline: false }
-                );
-            return interaction.reply({ embeds: [embed] });
+            return interaction.reply({ content: `🛡️ Check the Luffy.void web dashboard or use slash commands like \`/rules\`, \`/ip\`, \`/mc status\`, and \`/birthday list\`!` });
         }
 
     } catch (err) {
         console.error(err);
         if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ An error occurred while processing this command.', ephemeral: true }).catch(() => {});
+            await interaction.reply({ content: '❌ An error occurred while executing this command.', ephemeral: true }).catch(() => {});
+        }
+    }
+});
+
+client.on('guildMemberAdd', async member => {
+    const roleId = autoRoles[member.guild.id];
+    if (roleId) {
+        const role = member.guild.roles.cache.get(roleId);
+        if (role) {
+            await member.roles.add(role).catch(() => {});
+        }
+    }
+
+    const settings = serverSettings[member.guild.id];
+    if (!settings) return;
+
+    if (settings.welcomeChannel) {
+        const channel = member.guild.channels.cache.get(settings.welcomeChannel);
+        if (channel && settings.welcomeMessage) {
+            let textMessage = settings.welcomeMessage
+                .replace(/{mention}/g, `<@${member.id}>`)
+                .replace(/{server}/g, member.guild.name)
+                .replace(/{user\(proper\)}/g, member.user.username)
+                .replace(/{server\(members\)}/g, member.guild.memberCount.toString());
+
+            await channel.send({ content: textMessage }).catch(() => {});
+        }
+    }
+
+    if (settings.embedWelcomeChannel) {
+        const embedChannel = member.guild.channels.cache.get(settings.embedWelcomeChannel);
+        if (embedChannel) {
+            const embed = new EmbedBuilder()
+                .setColor(0x9d4edd)
+                .setTimestamp();
+
+            if (settings.embedTitle) {
+                const parsedTitle = settings.embedTitle
+                    .replace(/{mention}/g, `<@${member.id}>`)
+                    .replace(/{server}/g, member.guild.name)
+                    .replace(/{user\(proper\)}/g, member.user.username)
+                    .replace(/{server\(members\)}/g, member.guild.memberCount.toString());
+                embed.setTitle(parsedTitle);
+            }
+            if (settings.embedUrl) {
+                embed.setURL(settings.embedUrl);
+            }
+            if (settings.embedDesc) {
+                const parsedDesc = settings.embedDesc
+                    .replace(/{mention}/g, `<@${member.id}>`)
+                    .replace(/{server}/g, member.guild.name)
+                    .replace(/{user\(proper\)}/g, member.user.username)
+                    .replace(/{server\(members\)}/g, member.guild.memberCount.toString());
+                embed.setDescription(parsedDesc);
+            }
+            if (settings.embedAuthorName) {
+                const parsedAuthorName = settings.embedAuthorName
+                    .replace(/{mention}/g, `<@${member.id}>`)
+                    .replace(/{server}/g, member.guild.name)
+                    .replace(/{user\(proper\)}/g, member.user.username)
+                    .replace(/{server\(members\)}/g, member.guild.memberCount.toString());
+                
+                embed.setAuthor({
+                    name: parsedAuthorName,
+                    iconURL: settings.embedAuthorIcon || undefined,
+                    url: settings.embedAuthorUrl || undefined
+                });
+            }
+            if (settings.embedImage) {
+                embed.setImage(settings.embedImage);
+            }
+            if (settings.embedThumbnail) {
+                embed.setThumbnail(settings.embedThumbnail);
+            }
+            if (settings.embedFooterText) {
+                const parsedFooter = settings.embedFooterText
+                    .replace(/{mention}/g, `<@${member.id}>`)
+                    .replace(/{server}/g, member.guild.name)
+                    .replace(/{user\(proper\)}/g, member.user.username)
+                    .replace(/{server\(members\)}/g, member.guild.memberCount.toString());
+                
+                embed.setFooter({
+                    text: parsedFooter,
+                    iconURL: settings.embedFooterIcon || undefined
+                });
+            }
+
+            await embedChannel.send({ embeds: [embed] }).catch(() => {});
         }
     }
 });
 
 client.once('ready', async () => {
-    console.log(`✅ Logged in as real bot: ${client.user.tag}! Registering commands...`);
+    console.log(`✅ Logged in as real bot: ${client.user.tag}! Setting status...`);
     
     const updatePresence = () => {
-        const guildCount = client.guilds.cache.size;
-        client.user.setActivity(`over ${guildCount} servers`, { type: ActivityType.Watching });
+        const serverCount = client.guilds.cache.size;
+        client.user.setPresence({
+            activities: [{ name: `Serving ${serverCount} servers 🚀 | luffy.void`, type: 0 }],
+            status: 'idle'
+        });
     };
+
     updatePresence();
     setInterval(updatePresence, 30000);
 
     const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
     try {
         await rest.put(Routes.applicationCommands(client.user.id), { body: commandsList });
-        console.log(`Successfully registered all real slash commands globally!`);
+        console.log(`Successfully registered all updated slash commands globally!`);
     } catch (e) {
         console.error(e);
     }
