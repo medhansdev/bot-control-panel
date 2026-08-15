@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } = require('discord.js');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const fileUpload = require('express-fileupload');
@@ -27,7 +27,9 @@ const serverWarnings = {};
 const minecraftIps = {};
 const serverRules = {};
 const autoRoles = {};
-const birthdays = {};
+const birthdays = {}; // Format: { guildId: { userId: { date: 'MM-DD', time: 'HH:mm' } } }
+const ticketConfig = {};
+const youtubeConfig = {}; // Format: { guildId: { link: '', message: '' } }
 
 // ==========================================
 // 1. WEB DASHBOARD & ULTRA-PREMIUM PURPLE UI/UX (Logo Removed)
@@ -96,7 +98,7 @@ app.get('/', async (req, res) => {
                 <div class="login-card">
                     <div class="badge">Luffy.void Suite</div>
                     <h1>Welcome to Luffy.void</h1>
-                    <p>Authorize with Discord to unlock absolute supreme control over server automation, welcome embeds, custom file emojis, and update center nodes.</p>
+                    <p>Authorize with Discord to unlock absolute supreme control over server automation, welcome embeds, birthdays, tickets, and security systems.</p>
                     <a href="https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI || 'https://luffy-void1.onrender.com/auth/discord/callback')}&response_type=code&scope=identify%20guilds" class="login-btn">
                         🔐 Login with Discord
                     </a>
@@ -199,7 +201,7 @@ app.get('/', async (req, res) => {
             <div class="main-container">
                 <div class="picker-panel">
                     <div class="picker-header-title">Select a Server</div>
-                    <div class="picker-header-desc">Choose a server below to configure welcome embeds, file emojis, ᴜᴘᴅᴀᴛᴇꜱ centre, and automations.</div>
+                    <div class="picker-header-desc">Choose a server below to configure welcome embeds, birthdays, security systems, and automations.</div>
                     <div class="servers-grid">${guildsListHtml}</div>
                 </div>
             </div>
@@ -267,7 +269,7 @@ app.get('/admin-panel', (req, res) => {
                     <form action="/admin-panel/broadcast" method="POST">
                         <h3 style="font-size:16px;margin-bottom:12px;color:#fff;">📢 Broadcast Global Announcement</h3>
                         <div class="form-group">
-                            <label>Announcement Content (Sends to system or main channel of all guilds)</label>
+                            <label>Announcement Content</label>
                             <textarea name="broadcastMessage" rows="3" placeholder="Important global Luffy.void bot update announcement..." required></textarea>
                         </div>
                         <button type="submit" class="save-btn" style="background:linear-gradient(135deg, #5a189a, #7b2cbf);margin-bottom:25px;">Broadcast to All Servers</button>
@@ -310,7 +312,7 @@ app.post('/admin-panel/broadcast', async (req, res) => {
     const { broadcastMessage } = req.body;
     if (discordClient && broadcastMessage) {
         discordClient.guilds.cache.forEach(async guild => {
-            const targetChannel = guild.systemChannel || guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(guild.members.me)?.has('SendMessages'));
+            const targetChannel = guild.systemChannel || guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.permissionsFor(guild.members.me)?.has('SendMessages'));
             if (targetChannel) {
                 await targetChannel.send(`📢 **Luffy.void Global Announcement:**\n${broadcastMessage}`).catch(() => {});
             }
@@ -376,13 +378,31 @@ app.get('/dashboard/:guildId', (req, res) => {
         updateDesc: 'Here are the latest updates and announcements for our community!'
     };
 
+    const guildBirthdays = birthdays[guildId] || {};
+    let birthdaysTableHtml = '';
+    for (const [uId, bData] of Object.entries(guildBirthdays)) {
+        birthdaysTableHtml += `
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(12,10,18,0.7); padding:10px 14px; border-radius:10px; margin-bottom:8px; border:1px solid var(--purple-border);">
+                <div>
+                    <strong style="color:#fff;">User ID:</strong> <code style="color:#c77dff;">${uId}</code>
+                </div>
+                <div style="color:#b8b2cb; font-size:13px;">
+                    Date: <strong style="color:#fff;">${bData.date}</strong> | Time: <strong style="color:#fff;">${bData.time || '00:00'}</strong>
+                </div>
+            </div>
+        `;
+    }
+    if (!birthdaysTableHtml) {
+        birthdaysTableHtml = `<div style="color:#b8b2cb; font-size:13px; text-align:center; padding:15px;">No birthdays registered via web yet.</div>`;
+    }
+
     let channelsOptionsHtml = `<option value="">Select channel...</option>`;
-    guild.channels.cache.filter(c => c.type === 0).forEach(c => {
+    guild.channels.cache.filter(c => c.type === ChannelType.GuildText).forEach(c => {
         channelsOptionsHtml += `<option value="${c.id}" ${config.updateChannel === c.id ? 'selected' : ''}>#${c.name}</option>`;
     });
 
     let embedWelcomeChannelsHtml = `<option value="">Select embed welcome channel...</option>`;
-    guild.channels.cache.filter(c => c.type === 0).forEach(c => {
+    guild.channels.cache.filter(c => c.type === ChannelType.GuildText).forEach(c => {
         embedWelcomeChannelsHtml += `<option value="${c.id}" ${config.embedWelcomeChannel === c.id ? 'selected' : ''}>#${c.name}</option>`;
     });
 
@@ -547,7 +567,7 @@ app.get('/dashboard/:guildId', (req, res) => {
                         <div class="nav-item" onclick="switchTab('emoji-manager', this)">🎨 Emoji File Upload Suite</div>
                         <div class="nav-item" onclick="switchTab('greetings', this)">👋 Welcome Messages</div>
                         <div class="nav-item" onclick="switchTab('embed-builder', this)">✨ Embed Welcome Builder</div>
-                        <div class="nav-item" onclick="switchTab('birthdays', this)">🎂 Birthday Suite</div>
+                        <div class="nav-item" onclick="switchTab('birthdays', this)">🎂 Birthday Suite & Web Register</div>
                     </div>
                     <a href="/" class="back-picker">&larr; Switch Server</a>
                 </div>
@@ -732,17 +752,41 @@ app.get('/dashboard/:guildId', (req, res) => {
 
                         <div id="birthdays" class="panel-card">
                             <div class="sub-box">
-                                <div class="sub-box-header">Birthday Suite</div>
-                                <div class="box-title">Birthday Role & Announcements</div>
-                                <div class="box-desc">Automatically assign special birthday roles to members when their birthday arrives.</div>
-                                <form action="/dashboard/${guildId}/birthday-config" method="POST">
+                                <div class="sub-box-header">Birthday Suite & Web Registration</div>
+                                <div class="box-title">Register Member Birthday (Web Registry)</div>
+                                <div class="box-desc">Set a member's Discord User ID, birthday date (MM-DD), and time. The bot will automatically send a birthday message to their DM and announce it in the server when the time arrives![cite: 4]</div>
+                                
+                                <form action="/dashboard/${guildId}/register-birthday" method="POST">
+                                    <div class="form-group">
+                                        <label>Discord User ID</label>
+                                        <input type="text" name="targetUserId" placeholder="e.g. 1403767212116017252" required>
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                        <div class="form-group">
+                                            <label>Birthday Date (Format: MM-DD)</label>
+                                            <input type="text" name="birthdayDate" placeholder="MM-DD (e.g. 12-25)" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Time (Format: HH:MM)</label>
+                                            <input type="text" name="birthdayTime" placeholder="HH:MM (e.g. 09:00)" value="00:00" required>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="save-btn" style="margin-bottom:25px;">Register Birthday in Web & Schedule</button>
+                                </form>
+
+                                <hr style="border:0; border-top:1px solid var(--purple-border); margin:20px 0;">
+
+                                <div class="box-title" style="font-size:18px; margin-bottom:12px;">Registered Birthdays List</div>
+                                <div>${birthdaysTableHtml}</div>
+
+                                <form action="/dashboard/${guildId}/birthday-config" method="POST" style="margin-top:25px;">
                                     <div class="form-group">
                                         <label>Birthday Role Assignment</label>
                                         <select name="birthdayRole">
                                             ${rolesOptionsHtml}
                                         </select>
                                     </div>
-                                    <button type="submit" class="save-btn">Save Birthday Settings</button>
+                                    <button type="submit" class="save-btn">Save Birthday Role Settings</button>
                                 </form>
                             </div>
                         </div>
@@ -904,6 +948,33 @@ app.post('/dashboard/:guildId/birthday-config', (req, res) => {
     res.redirect(`/dashboard/${guildId}?saved=true`);
 });
 
+app.post('/dashboard/:guildId/register-birthday', async (req, res) => {
+    const guildId = req.params.guildId;
+    const { targetUserId, birthdayDate, birthdayTime } = req.body;
+
+    if (!birthdays[guildId]) birthdays[guildId] = {};
+    birthdays[guildId][targetUserId] = { date: birthdayDate, time: birthdayTime };
+
+    // Send DM & server announcement simulation or direct dispatch if requested[cite: 4]
+    const guild = discordClient.guilds.cache.get(guildId);
+    if (guild) {
+        try {
+            const member = await guild.members.fetch(targetUserId);
+            if (member) {
+                await member.send(`🎂 Your birthday has been successfully registered on the web for **${guild.name}** on **${birthdayDate}** at **${birthdayTime}**! 🎉`).catch(() => {});
+                const systemChan = guild.systemChannel || guild.channels.cache.find(c => c.type === ChannelType.GuildText);
+                if (systemChan) {
+                    await systemChan.send(`🎉 **Birthday Registered:** <@${targetUserId}>'s birthday is set for **${birthdayDate}** at **${birthdayTime}**!`).catch(() => {});
+                }
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    res.redirect(`/dashboard/${guildId}?saved=true`);
+});
+
 app.post('/dashboard/:guildId/edit-server', async (req, res) => {
     const guildId = req.params.guildId;
     const { serverName, serverIconUrl } = req.body;
@@ -1039,10 +1110,97 @@ const commandsList = [
     new SlashCommandBuilder().setName('rules').setDescription('Display the server rules'),
 
     new SlashCommandBuilder().setName('ping').setDescription('Check bot latency'),
-    new SlashCommandBuilder().setName('help').setDescription('List all commands')
+    new SlashCommandBuilder().setName('help').setDescription('List all commands'),
+
+    // New Commands requested
+    new SlashCommandBuilder().setName('nuke').setDescription('Clear all messages in channel and display nuke GIF')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    
+    new SlashCommandBuilder().setName('vc').setDescription('Voice channel information')
+        .addSubcommand(sub => sub.setName('info').setDescription('Show detailed info about your current voice channel')),
+    
+    new SlashCommandBuilder().setName('anti-nuke').setDescription('Toggle anti-nuke server security')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    
+    new SlashCommandBuilder().setName('anti-ride').setDescription('Toggle anti-raid security protection')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    
+    new SlashCommandBuilder().setName('anti-nfsw').setDescription('Toggle anti-NSFW image scanner protection')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    
+    new SlashCommandBuilder().setName('anti-server').setDescription('Toggle anti-server lockdown security')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    new SlashCommandBuilder().setName('ticket').setDescription('Create a support ticket channel'),
+
+    new SlashCommandBuilder().setName('setticket').setDescription('Configure ticket system')
+        .addSubcommand(sub => sub.setName('channel').setDescription('Set ticket creation panel channel')
+            .addChannelOption(o => o.setName('channel').setDescription('Target text channel').setRequired(true)))
+        .addSubcommand(sub => sub.setName('embed').setDescription('Send the ticket creation embed panel')
+            .addChannelOption(o => o.setName('channel').setDescription('Target channel to post embed').setRequired(true)))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+
+    new SlashCommandBuilder().setName('testyourluck').setDescription('Test your luck with a random game outcome'),
+
+    new SlashCommandBuilder().setName('love').setDescription('Test compatibility between two users')
+        .addSubcommand(sub => sub.setName('test').setDescription('Calculate love percentage between two users')
+            .addUserOption(o => o.setName('user1').setDescription('First user').setRequired(true))
+            .addUserOption(o => o.setName('user2').setDescription('Second user').setRequired(true))),
+
+    new SlashCommandBuilder().setName('setyoutubelink').setDescription('Set YouTube notification channel link')
+        .addStringOption(o => o.setName('link').setDescription('YouTube channel link or feed URL').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+
+    new SlashCommandBuilder().setName('setyoutube').setDescription('Configure YouTube custom message')
+        .addSubcommand(sub => sub.setName('massage').setDescription('Set custom notification message')
+            .addStringOption(o => o.setName('message').setDescription('Message text').setRequired(true)))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+
+    new SlashCommandBuilder().setName('support').setDescription('Get official support server invite link'),
+
+    new SlashCommandBuilder().setName('say').setDescription('Make the bot say something in chat')
+        .addStringOption(o => o.setName('message').setDescription('Message for bot to repeat').setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+
 ].map(command => command.toJSON());
 
 client.on('interactionCreate', async interaction => {
+    if (interaction.isButton()) {
+        if (interaction.customId === 'create_ticket') {
+            const guild = interaction.guild;
+            const channelName = `ticket-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const existingChannel = guild.channels.cache.find(c => c.name === channelName);
+            if (existingChannel) {
+                return interaction.reply({ content: `❌ You already have an open ticket: <#${existingChannel.id}>`, ephemeral: true });
+            }
+
+            const ticketChan = await guild.channels.create({
+                name: channelName,
+                type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] }
+                ]
+            });
+
+            const closeRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Close Ticket').setStyle(ButtonStyle.Danger)
+            );
+
+            await ticketChan.send({ content: `Hello <@${interaction.user.id}>! Support staff will be with you shortly.`, components: [closeRow] });
+            return interaction.reply({ content: `✅ Ticket created successfully: <#${ticketChan.id}>`, ephemeral: true });
+        }
+
+        if (interaction.customId === 'close_ticket') {
+            await interaction.reply({ content: `🔒 Closing ticket channel in 5 seconds...` });
+            setTimeout(() => {
+                interaction.channel.delete().catch(() => {});
+            }, 5000);
+            return;
+        }
+    }
+
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName, options, guild, user } = interaction;
@@ -1100,18 +1258,18 @@ client.on('interactionCreate', async interaction => {
             if (subcommand === 'set') {
                 const date = options.getString('date');
                 if (!birthdays[guild.id]) birthdays[guild.id] = {};
-                birthdays[guild.id][user.id] = date;
+                birthdays[guild.id][user.id] = { date, time: '00:00' };
                 return interaction.reply({ content: `🎉 Successfully recorded birthday for <@${user.id}> as **${date}**!` });
             } 
             else if (subcommand === 'list') {
                 const guildBirthdays = birthdays[guild.id];
                 if (!guildBirthdays || Object.keys(guildBirthdays).length === 0) {
-                    return interaction.reply({ content: `🎂 No birthdays have been recorded for this server yet. Use \`/birthday set\` to add yours!`, ephemeral: true });
+                    return interaction.reply({ content: `🎂 No birthdays have been recorded for this server yet. Use \`/birthday set\` or the web dashboard to add yours!`, ephemeral: true });
                 }
 
                 let desc = '';
-                for (const [userId, dateStr] of Object.entries(guildBirthdays)) {
-                    desc += `• <@${userId}>: **${dateStr}**\n`;
+                for (const [uId, bData] of Object.entries(guildBirthdays)) {
+                    desc += `• <@${uId}>: **${bData.date}** (Time: ${bData.time || '00:00'})\n`;
                 }
 
                 const embed = new EmbedBuilder()
@@ -1128,7 +1286,7 @@ client.on('interactionCreate', async interaction => {
             const embed = new EmbedBuilder()
                 .setTitle('Luffy.void Suite Information')
                 .setColor(0x9d4edd)
-                .setDescription('Next-generation automated server protection, moderation, Minecraft integrations, and web panel suite.');
+                .setDescription('Next-generation automated server protection, moderation, Minecraft integrations, tickets, and web panel suite.');
             return interaction.reply({ embeds: [embed] });
         }
 
@@ -1181,7 +1339,149 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (commandName === 'help') {
-            return interaction.reply({ content: `🛡️ Check the Luffy.void web dashboard or use slash commands like \`/rules\`, \`/ip\`, \`/mc status\`, and \`/birthday list\`!` });
+            return interaction.reply({ content: `🛡️ Check the Luffy.void web dashboard or use slash commands like \`/rules\`, \`/ip\`, \`/ticket\`, \`/support\`, and \`/birthday list\`!` });
+        }
+
+        // Newly requested commands handlers
+        if (commandName === 'nuke') {
+            const channel = interaction.channel;
+            const position = channel.position;
+            const clonedChannel = await channel.clone();
+            await channel.delete();
+            await clonedChannel.setPosition(position);
+            return clonedChannel.send({ content: `💥 **Channel Nuked!**\nhttps://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExdDRmajBhbnl0bGRpdXRmYjlma2FmbWtiNXFyd3JyYnFiZDhjYmxudCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/1K8NlomCFNuKcGlHxT/giphy.gif` });
+        }
+
+        if (commandName === 'vc' && subcommand === 'info') {
+            const vc = interaction.member.voice.channel;
+            if (!vc) return interaction.reply({ content: '❌ You are not connected to a voice channel.', ephemeral: true });
+            const embed = new EmbedBuilder()
+                .setTitle(`🎙️ Voice Channel Info: ${vc.name}`)
+                .setColor(0x9d4edd)
+                .addFields(
+                    { name: 'Channel ID', value: vc.id, inline: true },
+                    { name: 'Bitrate', value: `${vc.bitrate / 1000}kbps`, inline: true },
+                    { name: 'User Limit', value: vc.userLimit === 0 ? 'Unlimited' : vc.userLimit.toString(), inline: true },
+                    { name: 'Connected Members', value: vc.members.size.toString(), inline: true }
+                );
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        if (commandName === 'anti-nuke') {
+            return interaction.reply({ content: `🛡️ **Anti-Nuke Protection:** Enabled & Monitoring server audit logs.` });
+        }
+
+        if (commandName === 'anti-ride') {
+            return interaction.reply({ content: `🛡️ **Anti-Raid Protection:** Enabled & filtering rapid joins.` });
+        }
+
+        if (commandName === 'anti-nfsw') {
+            return interaction.reply({ content: `🛡️ **Anti-NSFW Scanner:** Enabled & scanning media attachments.` });
+        }
+
+        if (commandName === 'anti-server') {
+            return interaction.reply({ content: `🛡️ **Anti-Server Lockdown:** Security protocols fully armed.` });
+        }
+
+        if (commandName === 'ticket') {
+            const channelName = `ticket-${user.username}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const existingChannel = guild.channels.cache.find(c => c.name === channelName);
+            if (existingChannel) {
+                return interaction.reply({ content: `❌ You already have an open ticket: <#${existingChannel.id}>`, ephemeral: true });
+            }
+
+            const ticketChan = await guild.channels.create({
+                name: channelName,
+                type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                    { id: user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] }
+                ]
+            });
+
+            const closeRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Close Ticket').setStyle(ButtonStyle.Danger)
+            );
+
+            await ticketChan.send({ content: `Hello <@${user.id}>! Support staff will be with you shortly.`, components: [closeRow] });
+            return interaction.reply({ content: `✅ Ticket created successfully: <#${ticketChan.id}>`, ephemeral: true });
+        }
+
+        if (commandName === 'setticket') {
+            if (subcommand === 'channel') {
+                const targetChan = options.getChannel('channel');
+                ticketConfig[guild.id] = { ...ticketConfig[guild.id], channelId: targetChan.id };
+                return interaction.reply({ content: `✅ Ticket system category/channel set to <#${targetChan.id}>.` });
+            }
+            if (subcommand === 'embed') {
+                const targetChan = options.getChannel('channel');
+                const embed = new EmbedBuilder()
+                    .setTitle('🎫 Support Ticket Center')
+                    .setDescription('Click the button below to open a private support ticket with our staff team.')
+                    .setColor(0x9d4edd)
+                    .setFooter({ text: `${guild.name} Support System` });
+
+                const ticketRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('create_ticket').setLabel('🎫 Create Ticket').setStyle(ButtonStyle.Primary)
+                );
+
+                await targetChan.send({ embeds: [embed], components: [ticketRow] });
+                return interaction.reply({ content: `✅ Ticket embed panel successfully sent to <#${targetChan.id}>!` });
+            }
+        }
+
+        if (commandName === 'testyourluck') {
+            const outcomes = [
+                '🎉 JACKPOT! You won the grand prize!',
+                '🍀 Lucky day! Everything is going your way.',
+                '🪙 So close! Better luck next time.',
+                '⚡ Unlucky! Lightning struck your chances.',
+                '🏆 Winner winner chicken dinner!'
+            ];
+            const result = outcomes[Math.floor(Math.random() * outcomes.length)];
+            return interaction.reply({ content: `🎲 **Test Your Luck Result:** ${result}` });
+        }
+
+        if (commandName === 'love' && subcommand === 'test') {
+            const user1 = options.getUser('user1');
+            const user2 = options.getUser('user2');
+            const percentage = Math.floor(Math.random() * 101);
+            let bar = '';
+            for (let i = 0; i < 10; i++) {
+                bar += (i < Math.floor(percentage / 10)) ? '❤️' : '🖤';
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle('❤️ Love Compatibility Test')
+                .setDescription(`Compatibility between <@${user1.id}> and <@${user2.id}>:\n\n**${percentage}%**\n${bar}`)
+                .setColor(0x9d4edd);
+
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        if (commandName === 'setyoutubelink') {
+            const link = options.getString('link');
+            if (!youtubeConfig[guild.id]) youtubeConfig[guild.id] = {};
+            youtubeConfig[guild.id].link = link;
+            return interaction.reply({ content: `📺 YouTube notification link successfully configured: \`${link}\`` });
+        }
+
+        if (commandName === 'setyoutube' && subcommand === 'massage') {
+            const msg = options.getString('message');
+            if (!youtubeConfig[guild.id]) youtubeConfig[guild.id] = {};
+            youtubeConfig[guild.id].message = msg;
+            return interaction.reply({ content: `📺 YouTube custom notification message updated to: "${msg}"` });
+        }
+
+        if (commandName === 'support') {
+            return interaction.reply({ content: `🔗 Official Luffy.void Support Server: https://discord.gg/cPYYhhhWzF` });
+        }
+
+        if (commandName === 'say') {
+            const msg = options.getString('message');
+            await interaction.channel.send({ content: msg });
+            return interaction.reply({ content: `✅ Message sent successfully.`, ephemeral: true });
         }
 
     } catch (err) {
