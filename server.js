@@ -114,7 +114,6 @@ app.get('/', async (req, res) => {
         const userGuilds = await userGuildsRes.json();
 
         if (Array.isArray(userGuilds)) {
-            // Filter servers where user has Administrator or Manage Server (Permission bit 0x8 or 0x20)
             const manageableGuilds = userGuilds.filter(guild => (BigInt(guild.permissions) & 0x20n) === 0x20n || (BigInt(guild.permissions) & 0x8n) === 0x8n);
 
             if (manageableGuilds.length > 0) {
@@ -213,6 +212,11 @@ app.get('/', async (req, res) => {
 // MASTER ADMIN PANEL (Restricted to ID: 1403767212116017252)
 // ==========================================
 app.get('/admin-panel', (req, res) => {
+    const userId = req.cookies.discord_user_id;
+    if (userId !== '1403767212116017252') {
+        return res.status(403).send('Access Denied: You do not have permission to view the Super Admin Panel.');
+    }
+
     let guildsManagementHtml = '';
     if (discordClient) {
         discordClient.guilds.cache.forEach(g => {
@@ -299,6 +303,10 @@ app.get('/admin-panel', (req, res) => {
 });
 
 app.post('/admin-panel/broadcast', async (req, res) => {
+    const userId = req.cookies.discord_user_id;
+    if (userId !== '1403767212116017252') {
+        return res.status(403).send('Access Denied');
+    }
     const { broadcastMessage } = req.body;
     if (discordClient && broadcastMessage) {
         discordClient.guilds.cache.forEach(async guild => {
@@ -312,6 +320,10 @@ app.post('/admin-panel/broadcast', async (req, res) => {
 });
 
 app.post('/admin-panel/edit-bot', async (req, res) => {
+    const userId = req.cookies.discord_user_id;
+    if (userId !== '1403767212116017252') {
+        return res.status(403).send('Access Denied');
+    }
     const { botUsername, botAvatarUrl } = req.body;
     if (discordClient && discordClient.user) {
         if (botUsername) await discordClient.user.setUsername(botUsername).catch(() => {});
