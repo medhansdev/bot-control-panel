@@ -27,7 +27,7 @@ const serverWarnings = {};
 const minecraftIps = {};
 const serverRules = {};
 const autoRoles = {};
-const birthdays = {}; // Format: { guildId: { userId: { date: 'MM-DD', time: 'HH:mm' } } }
+const birthdays = {}; // Format: { guildId: { userId: [{ date: 'MM-DD', time: 'HH:mm' }] } }
 const ticketConfig = {};
 const youtubeConfig = {}; // Format: { guildId: { link: '', message: '' } }
 
@@ -380,17 +380,21 @@ app.get('/dashboard/:guildId', (req, res) => {
 
     const guildBirthdays = birthdays[guildId] || {};
     let birthdaysTableHtml = '';
-    for (const [uId, bData] of Object.entries(guildBirthdays)) {
-        birthdaysTableHtml += `
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(12,10,18,0.7); padding:10px 14px; border-radius:10px; margin-bottom:8px; border:1px solid var(--purple-border);">
-                <div>
-                    <strong style="color:#fff;">User ID:</strong> <code style="color:#c77dff;">${uId}</code>
-                </div>
-                <div style="color:#b8b2cb; font-size:13px;">
-                    Date: <strong style="color:#fff;">${bData.date}</strong> | Time: <strong style="color:#fff;">${bData.time || '00:00'}</strong>
-                </div>
-            </div>
-        `;
+    for (const [uId, bDataArray] of Object.entries(guildBirthdays)) {
+        if (Array.isArray(bDataArray)) {
+            bDataArray.forEach((bData, idx) => {
+                birthdaysTableHtml += `
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(12,10,18,0.7); padding:10px 14px; border-radius:10px; margin-bottom:8px; border:1px solid var(--purple-border);">
+                        <div>
+                            <strong style="color:#fff;">User ID:</strong> <code style="color:#c77dff;">${uId}</code> <span style="font-size:11px; color:#8c82a8;">(#${idx + 1})</span>
+                        </div>
+                        <div style="color:#b8b2cb; font-size:13px;">
+                            Date: <strong style="color:#fff;">${bData.date}</strong> | Time: <strong style="color:#fff;">${bData.time || '00:00'}</strong>
+                        </div>
+                    </div>
+                `;
+            });
+        }
     }
     if (!birthdaysTableHtml) {
         birthdaysTableHtml = `<div style="color:#b8b2cb; font-size:13px; text-align:center; padding:15px;">No birthdays registered via web yet.</div>`;
@@ -754,7 +758,7 @@ app.get('/dashboard/:guildId', (req, res) => {
                             <div class="sub-box">
                                 <div class="sub-box-header">Birthday Suite & Web Registration</div>
                                 <div class="box-title">Register Member Birthday (Web Registry)</div>
-                                <div class="box-desc">Set a member's Discord User ID, birthday date (MM-DD), and time. The bot will automatically send a birthday message to their DM and announce it in the server when the time arrives![cite: 4]</div>
+                                <div class="box-desc">Set a member's Discord User ID, birthday date (MM-DD), and time. Users can have multiple dates registered. The bot will automatically send a birthday message to their DM and announce it in the server when the time arrives[cite: 4].</div>
                                 
                                 <form action="/dashboard/${guildId}/register-birthday" method="POST">
                                     <div class="form-group">
@@ -953,18 +957,20 @@ app.post('/dashboard/:guildId/register-birthday', async (req, res) => {
     const { targetUserId, birthdayDate, birthdayTime } = req.body;
 
     if (!birthdays[guildId]) birthdays[guildId] = {};
-    birthdays[guildId][targetUserId] = { date: birthdayDate, time: birthdayTime };
+    if (!birthdays[guildId][targetUserId]) birthdays[guildId][targetUserId] = [];
+    
+    // Push multiple birthday entries support
+    birthdays[guildId][targetUserId].push({ date: birthdayDate, time: birthdayTime || '00:00' });
 
-    // Send DM & server announcement simulation or direct dispatch if requested[cite: 4]
     const guild = discordClient.guilds.cache.get(guildId);
     if (guild) {
         try {
             const member = await guild.members.fetch(targetUserId);
             if (member) {
-                await member.send(`🎂 Your birthday has been successfully registered on the web for **${guild.name}** on **${birthdayDate}** at **${birthdayTime}**! 🎉`).catch(() => {});
+                await member.send(`🎂 A new birthday has been successfully registered on the web for **${guild.name}** on **${birthdayDate}** at **${birthdayTime || '00:00'}**! 🎉`).catch(() => {});
                 const systemChan = guild.systemChannel || guild.channels.cache.find(c => c.type === ChannelType.GuildText);
                 if (systemChan) {
-                    await systemChan.send(`🎉 **Birthday Registered:** <@${targetUserId}>'s birthday is set for **${birthdayDate}** at **${birthdayTime}**!`).catch(() => {});
+                    await systemChan.send(`🎉 **Birthday Registered:** <@${targetUserId}>'s birthday is set for **${birthdayDate}** at **${birthdayTime || '00:00'}**!`).catch(() => {});
                 }
             }
         } catch (e) {
@@ -1086,7 +1092,7 @@ const commandsList = [
         .addSubcommand(sub => sub.setName('voice').setDescription('Clone or replicate your current voice channel setup')),
     
     new SlashCommandBuilder().setName('birthday').setDescription('Set or check member birthdays')
-        .addSubcommand(sub => sub.setName('set').setDescription('Set your birthday date')
+        .addSubcommand(sub => sub.setName('set').setDescription('Set your birthday date (supports multiple dates)')
             .addStringOption(o => o.setName('date').setDescription('Format: MM-DD').setRequired(true)))
         .addSubcommand(sub => sub.setName('list').setDescription('List all registered server birthdays')),
     
@@ -1112,7 +1118,6 @@ const commandsList = [
     new SlashCommandBuilder().setName('ping').setDescription('Check bot latency'),
     new SlashCommandBuilder().setName('help').setDescription('List all commands'),
 
-    // New Commands requested
     new SlashCommandBuilder().setName('nuke').setDescription('Clear all messages in channel and display nuke GIF')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     
@@ -1258,8 +1263,11 @@ client.on('interactionCreate', async interaction => {
             if (subcommand === 'set') {
                 const date = options.getString('date');
                 if (!birthdays[guild.id]) birthdays[guild.id] = {};
-                birthdays[guild.id][user.id] = { date, time: '00:00' };
-                return interaction.reply({ content: `🎉 Successfully recorded birthday for <@${user.id}> as **${date}**!` });
+                if (!birthdays[guild.id][user.id]) birthdays[guild.id][user.id] = [];
+                
+                // Pushes new birthday entry allowing multiple birthdays per user
+                birthdays[guild.id][user.id].push({ date, time: '00:00' });
+                return interaction.reply({ content: `🎉 Successfully recorded additional birthday for <@${user.id}> as **${date}**!` });
             } 
             else if (subcommand === 'list') {
                 const guildBirthdays = birthdays[guild.id];
@@ -1268,8 +1276,12 @@ client.on('interactionCreate', async interaction => {
                 }
 
                 let desc = '';
-                for (const [uId, bData] of Object.entries(guildBirthdays)) {
-                    desc += `• <@${uId}>: **${bData.date}** (Time: ${bData.time || '00:00'})\n`;
+                for (const [uId, bDataArray] of Object.entries(guildBirthdays)) {
+                    if (Array.isArray(bDataArray)) {
+                        bDataArray.forEach((bData, idx) => {
+                            desc += `• <@${uId}> (Entry #${idx + 1}): **${bData.date}** (Time: ${bData.time || '00:00'})\n`;
+                        });
+                    }
                 }
 
                 const embed = new EmbedBuilder()
@@ -1342,7 +1354,6 @@ client.on('interactionCreate', async interaction => {
             return interaction.reply({ content: `🛡️ Check the Luffy.void web dashboard or use slash commands like \`/rules\`, \`/ip\`, \`/ticket\`, \`/support\`, and \`/birthday list\`!` });
         }
 
-        // Newly requested commands handlers
         if (commandName === 'nuke') {
             const channel = interaction.channel;
             const position = channel.position;
