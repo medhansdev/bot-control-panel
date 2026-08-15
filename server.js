@@ -51,7 +51,7 @@ const globalCss = `
     }
 `;
 
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
     const accessToken = req.cookies.discord_token;
 
     if (!accessToken) {
@@ -107,23 +107,42 @@ app.get('/', (req, res) => {
     }
 
     let guildsListHtml = '';
-    if (discordClient && discordClient.guilds.cache.size > 0) {
-        discordClient.guilds.cache.forEach(guild => {
-            const iconUrl = guild.iconURL({ dynamic: true, size: 256 }) || 'https://files.catbox.moe/y08zjc.png';
-            guildsListHtml += `
-                <a href="/dashboard/${guild.id}" class="server-card">
-                    <div class="server-icon-wrapper">
-                        <img src="${iconUrl}" class="server-icon" alt="${guild.name}">
-                    </div>
-                    <div class="server-info">
-                        <div class="server-name">${guild.name}</div>
-                        <div class="server-role">Configure Server &rarr; (${guild.memberCount} members)</div>
-                    </div>
-                </a>
-            `;
+    try {
+        const userGuildsRes = await fetch('https://discord.com/api/users/@me/guilds', {
+            headers: { Authorization: `Bearer ${accessToken}` }
         });
-    } else {
-        guildsListHtml = `<div class="empty-notice">Bot is not connected to any servers yet!</div>`;
+        const userGuilds = await userGuildsRes.json();
+
+        if (Array.isArray(userGuilds)) {
+            // Filter servers where user has Administrator or Manage Server (Permission bit 0x8 or 0x20)
+            const manageableGuilds = userGuilds.filter(guild => (BigInt(guild.permissions) & 0x20n) === 0x20n || (BigInt(guild.permissions) & 0x8n) === 0x8n);
+
+            if (manageableGuilds.length > 0) {
+                manageableGuilds.forEach(guild => {
+                    const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png` : 'https://files.catbox.moe/y08zjc.png';
+                    const isBotInGuild = discordClient && discordClient.guilds.cache.has(guild.id);
+
+                    guildsListHtml += `
+                        <a href="/dashboard/${guild.id}" class="server-card">
+                            <div class="server-icon-wrapper">
+                                <img src="${iconUrl}" class="server-icon" alt="${guild.name}">
+                            </div>
+                            <div class="server-info">
+                                <div class="server-name">${guild.name}</div>
+                                <div class="server-role">${isBotInGuild ? 'Configure Server &rarr;' : 'Invite Bot &rarr;'}</div>
+                            </div>
+                        </a>
+                    `;
+                });
+            } else {
+                guildsListHtml = `<div class="empty-notice">No manageable servers found! Make sure you have Administrator or Manage Server permissions.</div>`;
+            }
+        } else {
+            guildsListHtml = `<div class="empty-notice">Failed to load servers from Discord. Try logging out and logging back in.</div>`;
+        }
+    } catch (e) {
+        console.error(e);
+        guildsListHtml = `<div class="empty-notice">Error fetching servers. Please try again later.</div>`;
     }
 
     res.send(`
@@ -308,7 +327,22 @@ app.get('/dashboard/:guildId', (req, res) => {
     const guildId = req.params.guildId;
     const guild = discordClient.guilds.cache.get(guildId);
 
-    if (!guild) return res.send("Server not found or bot is not inside this guild!");
+    if (!guild) {
+        return res.send(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head><meta charset="UTF-8"><title>Bot Not In Server</title><style>${globalCss} body{display:flex;align-items:center;justify-content:center;}</style></head>
+            <body>
+                <div style="background:var(--dark-glass);border:1px solid var(--purple-border);padding:40px;border-radius:20px;text-align:center;max-width:450px;">
+                    <h2 style="color:#c77dff;margin-bottom:10px;">Bot Not In Server</h2>
+                    <p style="color:#b8b2cb;font-size:14px;margin-bottom:20px;">Luffy.void is not added to this server yet. Invite the bot first to configure its settings!</p>
+                    <a href="https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=8&scope=bot%20applications.commands" target="_blank" style="background:linear-gradient(135deg, #7b2cbf, #9d4edd);color:#fff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;display:inline-block;margin-bottom:15px;">Invite Bot to Server</a>
+                    <br><a href="/" style="color:#c77dff;text-decoration:none;font-size:13px;">&larr; Back to Dashboard</a>
+                </div>
+            </body>
+            </html>
+        `);
+    }
 
     const config = serverSettings[guildId] || {
         welcomeChannel: '',
