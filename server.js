@@ -31,8 +31,23 @@ const birthdays = {}; // Format: { guildId: { userId: [{ date: 'MM-DD', time: 'H
 const ticketConfig = {};
 const youtubeConfig = {}; // Format: { guildId: { link: '', message: '' } }
 
+// Helper function to format variables in welcome messages & embeds
+function parseWelcomeVariables(text, member) {
+    if (!text) return '';
+    const userAvatar = member.user.displayAvatarURL({ dynamic: true, size: 1024 });
+    const serverIcon = member.guild.iconURL({ dynamic: true, size: 1024 }) || '';
+    
+    return text
+        .replace(/{mention}/g, `<@${member.id}>`)
+        .replace(/{server}/g, member.guild.name)
+        .replace(/{user\(proper\)}/g, member.user.username)
+        .replace(/{server\(members\)}/g, member.guild.memberCount.toString())
+        .replace(/{avatar}/g, userAvatar)
+        .replace(/{serverIcon}/g, serverIcon);
+}
+
 // ==========================================
-// 1. WEB DASHBOARD & ULTRA-PREMIUM PURPLE UI/UX (Logo Removed)
+// 1. WEB DASHBOARD & ULTRA-PREMIUM PURPLE UI/UX
 // ==========================================
 
 const globalCss = `
@@ -211,7 +226,7 @@ app.get('/', async (req, res) => {
 });
 
 // ==========================================
-// MASTER ADMIN PANEL (Restricted to ID: 1403767212116017252)
+// MASTER ADMIN PANEL (Restricted)
 // ==========================================
 app.get('/admin-panel', (req, res) => {
     const userId = req.cookies.discord_user_id;
@@ -339,7 +354,7 @@ app.post('/admin-panel/edit-bot', async (req, res) => {
 // ==========================================
 app.get('/dashboard/:guildId', (req, res) => {
     const guildId = req.params.guildId;
-    const guild = discordClient.guilds.cache.get(guildId);
+    const guild = discordClient ? discordClient.guilds.cache.get(guildId) : null;
 
     if (!guild) {
         return res.send(`
@@ -362,15 +377,15 @@ app.get('/dashboard/:guildId', (req, res) => {
         welcomeChannel: '',
         welcomeMessage: 'Hello {mention} and welcome to {server}! 🎉',
         embedWelcomeChannel: '',
-        embedAuthorName: '',
+        embedAuthorName: 'Welcome {user(proper)}!',
         embedAuthorUrl: '',
-        embedAuthorIcon: '',
-        embedTitle: '',
+        embedAuthorIcon: '{avatar}',
+        embedTitle: 'Welcome to {server}!',
         embedUrl: '',
-        embedDesc: '',
+        embedDesc: 'Welcome {mention}! We are glad to have you here. You are member #{server(members)}!',
         embedImage: '',
-        embedThumbnail: '',
-        embedFooterText: '',
+        embedThumbnail: '{avatar}',
+        embedFooterText: 'Member Count: {server(members)}',
         embedFooterIcon: '',
         birthdayRole: '',
         updateChannel: '',
@@ -400,9 +415,14 @@ app.get('/dashboard/:guildId', (req, res) => {
         birthdaysTableHtml = `<div style="color:#b8b2cb; font-size:13px; text-align:center; padding:15px;">No birthdays registered via web yet.</div>`;
     }
 
-    let channelsOptionsHtml = `<option value="">Select channel...</option>`;
+    let textChannelsHtml = `<option value="">Select channel...</option>`;
     guild.channels.cache.filter(c => c.type === ChannelType.GuildText).forEach(c => {
-        channelsOptionsHtml += `<option value="${c.id}" ${config.updateChannel === c.id ? 'selected' : ''}>#${c.name}</option>`;
+        textChannelsHtml += `<option value="${c.id}" ${config.welcomeChannel === c.id ? 'selected' : ''}>#${c.name}</option>`;
+    });
+
+    let updateChannelsHtml = `<option value="">Select channel...</option>`;
+    guild.channels.cache.filter(c => c.type === ChannelType.GuildText).forEach(c => {
+        updateChannelsHtml += `<option value="${c.id}" ${config.updateChannel === c.id ? 'selected' : ''}>#${c.name}</option>`;
     });
 
     let embedWelcomeChannelsHtml = `<option value="">Select embed welcome channel...</option>`;
@@ -566,7 +586,7 @@ app.get('/dashboard/:guildId', (req, res) => {
                     </div>
                     <div class="nav-category">Core Suites</div>
                     <div class="nav-links">
-                        <div class="nav-item active" onclick="switchTab('updates-center', this)">🚀 ᴜᴘᴅᴀᴛᴇꜱ & Announcements</div>
+                        <div class="nav-item active" onclick="switchTab('updates-center', this)">🚀 Updates & Announcements</div>
                         <div class="nav-item" onclick="switchTab('server-edit', this)">⚙️ Server Properties</div>
                         <div class="nav-item" onclick="switchTab('emoji-manager', this)">🎨 Emoji File Upload Suite</div>
                         <div class="nav-item" onclick="switchTab('greetings', this)">👋 Welcome Messages</div>
@@ -582,14 +602,14 @@ app.get('/dashboard/:guildId', (req, res) => {
                         <div id="updates-center" class="panel-card active">
                             <form action="/dashboard/${guildId}/send-update" method="POST">
                                 <div class="sub-box">
-                                    <div class="sub-box-header">ᴜᴘᴅᴀᴛᴇꜱ & Announcement Center</div>
+                                    <div class="sub-box-header">Updates & Announcement Center</div>
                                     <div class="box-title">Send Server Announcements & Rules Embeds</div>
-                                    <div class="box-desc">Instantly push custom server updates, patch notes, server rules, or announcements as a gorgeous purple embed to your designated channel.</div>
+                                    <div class="box-desc">Instantly push custom server updates, patch notes, server rules, or announcements as a dynamic embed to your designated channel.</div>
                                     
                                     <div class="form-group">
                                         <label>Target Announcement Channel</label>
                                         <select name="updateChannel" required>
-                                            ${channelsOptionsHtml}
+                                            ${updateChannelsHtml}
                                         </select>
                                     </div>
 
@@ -603,7 +623,7 @@ app.get('/dashboard/:guildId', (req, res) => {
                                         <textarea name="updateDesc" rows="6" placeholder="Type your detailed server announcement, rules, or update notes here..." required>${config.updateDesc || ''}</textarea>
                                     </div>
 
-                                    <button type="submit" class="save-btn" style="width:100%;padding:15px;font-size:15px;">🚀 Send ᴜᴘᴅᴀᴛᴇꜱ / Rules Embed Now</button>
+                                    <button type="submit" class="save-btn" style="width:100%;padding:15px;font-size:15px;">🚀 Send Updates / Rules Embed Now</button>
                                 </div>
                             </form>
                         </div>
@@ -653,23 +673,32 @@ app.get('/dashboard/:guildId', (req, res) => {
                             <form action="/dashboard/${guildId}/save-welcome" method="POST">
                                 <div class="sub-box">
                                     <div class="sub-box-header">Channel Selection & Variables</div>
-                                    <div class="box-title">Welcome Configuration</div>
-                                    <div class="box-desc">Configure dynamic greeting tags and welcome text messages.</div>
+                                    <div class="box-title">Text Welcome Configuration</div>
+                                    <div class="box-desc">Configure target channel and dynamic greeting text messages.</div>
                                     
                                     <div class="variable-box">
                                         <strong>Useful variables:</strong><br>
-                                        <code>{mention}</code> - Mentions the person joining.<br>
+                                        <code>{mention}</code> - Mentions the user joining.<br>
                                         <code>{server}</code> - The server's name.<br>
-                                        <code>{user(proper)}</code> - The person joining's name in proper format.<br>
-                                        <code>{server(members)}</code> - The total number of members after joining.
+                                        <code>{user(proper)}</code> - The joining user's username.<br>
+                                        <code>{server(members)}</code> - The total member count.<br>
+                                        <code>{avatar}</code> - User avatar image URL.<br>
+                                        <code>{serverIcon}</code> - Server icon image URL.
                                     </div>
 
                                     <div class="form-group">
-                                        <label>Welcome Message (Normal text)</label>
-                                        <textarea name="welcomeMessage" rows="3">${config.welcomeMessage}</textarea>
+                                        <label>Welcome Channel</label>
+                                        <select name="welcomeChannel">
+                                            ${textChannelsHtml}
+                                        </select>
                                     </div>
 
-                                    <button type="submit" class="save-btn" style="width:100%;padding:14px;font-size:15px;">Save Welcome Configuration</button>
+                                    <div class="form-group">
+                                        <label>Welcome Message (Plain text)</label>
+                                        <textarea name="welcomeMessage" rows="4" placeholder="Hello {mention}, welcome to {server}! 🎉">${config.welcomeMessage || ''}</textarea>
+                                    </div>
+
+                                    <button type="submit" class="save-btn" style="width:100%;padding:14px;font-size:15px;">Save Welcome Message Config</button>
                                 </div>
                             </form>
                         </div>
@@ -678,11 +707,15 @@ app.get('/dashboard/:guildId', (req, res) => {
                             <form action="/dashboard/${guildId}/save-embed-with-file" method="POST" enctype="multipart/form-data" id="embedForm">
                                 <div class="sub-box">
                                     <div class="sub-box-header">Embed Welcome Builder</div>
-                                    <div class="box-title">Advanced Embed Welcome & Live Preview</div>
-                                    <div class="box-desc">Customize rich welcome embeds with designated channel, emojis, big images (URL or File Upload), thumbnails, and footers.</div>
+                                    <div class="box-title">Advanced Welcome Embed Suite & Live Preview</div>
+                                    <div class="box-desc">Customize rich welcome embeds. Use <code>{avatar}</code> in image/icon inputs to display the joining user's avatar.</div>
+
+                                    <div class="variable-box">
+                                        <strong>Available Variables:</strong> <code>{mention}</code>, <code>{server}</code>, <code>{user(proper)}</code>, <code>{server(members)}</code>, <code>{avatar}</code>, <code>{serverIcon}</code>
+                                    </div>
 
                                     <div class="form-group">
-                                        <label>Embed Welcome Channel (Send this embed on member join)</label>
+                                        <label>Embed Welcome Channel</label>
                                         <select name="embedWelcomeChannel">
                                             ${embedWelcomeChannelsHtml}
                                         </select>
@@ -697,55 +730,55 @@ app.get('/dashboard/:guildId', (req, res) => {
 
                                     <div style="display:grid; grid-template-columns: 1fr 2fr 1fr; gap: 15px; margin-bottom: 20px;">
                                         <div class="form-group" style="margin-bottom:0;">
-                                            <label>Icon url</label>
-                                            <input type="text" name="embedAuthorIcon" id="authorIconInput" placeholder="Icon url" value="${config.embedAuthorIcon || ''}" oninput="updatePreview()">
+                                            <label>Author Icon URL (Use {avatar})</label>
+                                            <input type="text" name="embedAuthorIcon" id="authorIconInput" placeholder="{avatar}" value="${config.embedAuthorIcon || ''}" oninput="updatePreview()">
                                         </div>
                                         <div class="form-group" style="margin-bottom:0;">
-                                            <label>Name</label>
-                                            <input type="text" name="embedAuthorName" id="authorNameInput" placeholder="Name" value="${config.embedAuthorName || ''}" oninput="updatePreview()">
+                                            <label>Author Name</label>
+                                            <input type="text" name="embedAuthorName" id="authorNameInput" placeholder="Welcome {user(proper)}!" value="${config.embedAuthorName || ''}" oninput="updatePreview()">
                                         </div>
                                         <div class="form-group" style="margin-bottom:0;">
-                                            <label>Name url</label>
-                                            <input type="text" name="embedAuthorUrl" placeholder="Name url" value="${config.embedAuthorUrl || ''}">
+                                            <label>Author URL</label>
+                                            <input type="text" name="embedAuthorUrl" placeholder="https://..." value="${config.embedAuthorUrl || ''}">
                                         </div>
                                     </div>
 
                                     <div style="display:grid; grid-template-columns: 3fr 1fr; gap: 15px; margin-bottom: 20px;">
                                         <div class="form-group" style="margin-bottom:0;">
-                                            <label>Title</label>
-                                            <input type="text" name="embedTitle" id="titleInput" maxlength="200" placeholder="Title" value="${config.embedTitle || ''}" oninput="updatePreview()">
+                                            <label>Embed Title</label>
+                                            <input type="text" name="embedTitle" id="titleInput" maxlength="200" placeholder="Welcome to {server}!" value="${config.embedTitle || ''}" oninput="updatePreview()">
                                         </div>
                                         <div class="form-group" style="margin-bottom:0;">
-                                            <label>Title url</label>
-                                            <input type="text" name="embedUrl" placeholder="Title url" value="${config.embedUrl || ''}">
+                                            <label>Title URL</label>
+                                            <input type="text" name="embedUrl" placeholder="https://..." value="${config.embedUrl || ''}">
                                         </div>
                                     </div>
 
                                     <div class="form-group">
-                                        <label>Description (Supports emojis & variables like {mention})</label>
-                                        <textarea name="embedDesc" id="embedDescInput" rows="4" maxlength="2048" placeholder="Description" oninput="updatePreview()">${config.embedDesc || ''}</textarea>
+                                        <label>Embed Description</label>
+                                        <textarea name="embedDesc" id="embedDescInput" rows="4" maxlength="2048" placeholder="Welcome {mention} to {server}!" oninput="updatePreview()">${config.embedDesc || ''}</textarea>
                                     </div>
 
                                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                                         <div class="form-group" style="margin-bottom:0;">
-                                            <label>Big Image URL or Upload File</label>
-                                            <input type="text" name="embedImage" id="imageInput" placeholder="https://... or upload below" value="${config.embedImage || ''}" oninput="updatePreview()" style="margin-bottom:8px;">
+                                            <label>Big Image URL (or upload below)</label>
+                                            <input type="text" name="embedImage" id="imageInput" placeholder="https://... or {avatar}" value="${config.embedImage || ''}" oninput="updatePreview()" style="margin-bottom:8px;">
                                             <input type="file" name="embedImageFile" accept="image/*" style="font-size:12px; padding:8px; background:rgba(12,10,18,0.85); border:1px solid var(--purple-border); border-radius:10px; color:#fff;">
                                         </div>
                                         <div class="form-group" style="margin-bottom:0;">
-                                            <label>Thumbnail url (Small top right)</label>
-                                            <input type="text" name="embedThumbnail" id="thumbnailInput" placeholder="https://example.com/thumb.png" value="${config.embedThumbnail || ''}" oninput="updatePreview()">
+                                            <label>Thumbnail URL (Top Right)</label>
+                                            <input type="text" name="embedThumbnail" id="thumbnailInput" placeholder="{avatar} or {serverIcon}" value="${config.embedThumbnail || ''}" oninput="updatePreview()">
                                         </div>
                                     </div>
 
                                     <div style="display:grid; grid-template-columns: 2fr 1fr; gap: 15px; margin-bottom: 25px;">
                                         <div class="form-group" style="margin-bottom:0;">
-                                            <label>Footer</label>
-                                            <input type="text" name="embedFooterText" id="footerInput" maxlength="2048" placeholder="Footer text" value="${config.embedFooterText || ''}" oninput="updatePreview()">
+                                            <label>Footer Text</label>
+                                            <input type="text" name="embedFooterText" id="footerInput" maxlength="2048" placeholder="Member Count: {server(members)}" value="${config.embedFooterText || ''}" oninput="updatePreview()">
                                         </div>
                                         <div class="form-group" style="margin-bottom:0;">
-                                            <label>Footer icon</label>
-                                            <input type="text" name="embedFooterIcon" id="footerIconInput" placeholder="Footer icon url" value="${config.embedFooterIcon || ''}" oninput="updatePreview()">
+                                            <label>Footer Icon URL</label>
+                                            <input type="text" name="embedFooterIcon" id="footerIconInput" placeholder="{serverIcon}" value="${config.embedFooterIcon || ''}" oninput="updatePreview()">
                                         </div>
                                     </div>
 
@@ -757,8 +790,8 @@ app.get('/dashboard/:guildId', (req, res) => {
                         <div id="birthdays" class="panel-card">
                             <div class="sub-box">
                                 <div class="sub-box-header">Birthday Suite & Web Registration</div>
-                                <div class="box-title">Register Member Birthday (Web Registry)</div>
-                                <div class="box-desc">Set a member's Discord User ID, birthday date (MM-DD), and time. Users can have multiple dates registered. The bot will automatically send a birthday message to their DM and announce it in the server when the time arrives[cite: 4].</div>
+                                <div class="box-title">Register Member Birthday</div>
+                                <div class="box-desc">Set a member's Discord User ID, birthday date (MM-DD), and time. The bot will automatically send a birthday message to their DM and announce it in the server when the scheduled time arrives.</div>
                                 
                                 <form action="/dashboard/${guildId}/register-birthday" method="POST">
                                     <div class="form-group">
@@ -775,7 +808,7 @@ app.get('/dashboard/:guildId', (req, res) => {
                                             <input type="text" name="birthdayTime" placeholder="HH:MM (e.g. 09:00)" value="00:00" required>
                                         </div>
                                     </div>
-                                    <button type="submit" class="save-btn" style="margin-bottom:25px;">Register Birthday in Web & Schedule</button>
+                                    <button type="submit" class="save-btn" style="margin-bottom:25px;">Register Birthday</button>
                                 </form>
 
                                 <hr style="border:0; border-top:1px solid var(--purple-border); margin:20px 0;">
@@ -798,7 +831,7 @@ app.get('/dashboard/:guildId', (req, res) => {
                     </div>
 
                     <div class="preview-pane">
-                        <div class="preview-title">👁️ Live Embed Preview</div>
+                        <div class="preview-title">👁️ Dynamic Embed Live Preview</div>
                         <div class="discord-message-mock">
                             <div class="mock-avatar">L</div>
                             <div class="mock-content">
@@ -824,12 +857,27 @@ app.get('/dashboard/:guildId', (req, res) => {
                 </div>
             </div>
             <script>
+                const mockUserAvatar = 'https://cdn.discordapp.com/embed/avatars/0.png';
+                const mockServerIcon = '${guild.iconURL({ dynamic: true }) || 'https://files.catbox.moe/y08zjc.png'}';
+
+                function resolveVariables(str) {
+                    if (!str) return '';
+                    return str
+                        .replace(/{mention}/g, '@User')
+                        .replace(/{server}/g, '${guild.name.replace(/'/g, "\\'")}')
+                        .replace(/{user\(proper\)}/g, 'User')
+                        .replace(/{server\(members\)}/g, '${guild.memberCount}')
+                        .replace(/{avatar}/g, mockUserAvatar)
+                        .replace(/{serverIcon}/g, mockServerIcon);
+                }
+
                 function switchTab(tabId, element) {
                     document.querySelectorAll('.panel-card').forEach(card => card.classList.remove('active'));
                     document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
                     document.getElementById(tabId).classList.add('active');
                     element.classList.add('active');
                 }
+
                 function insertEmoji(emojiText, targetId) {
                     const textarea = document.getElementById(targetId);
                     if (!textarea) return;
@@ -838,14 +886,14 @@ app.get('/dashboard/:guildId', (req, res) => {
                 }
 
                 function updatePreview() {
-                    const authorName = document.getElementById('authorNameInput') ? document.getElementById('authorNameInput').value : '';
-                    const authorIcon = document.getElementById('authorIconInput') ? document.getElementById('authorIconInput').value : '';
-                    const title = document.getElementById('titleInput') ? document.getElementById('titleInput').value : '';
-                    const desc = document.getElementById('embedDescInput') ? document.getElementById('embedDescInput').value : '';
-                    const image = document.getElementById('imageInput') ? document.getElementById('imageInput').value : '';
-                    const thumbnail = document.getElementById('thumbnailInput') ? document.getElementById('thumbnailInput').value : '';
-                    const footer = document.getElementById('footerInput') ? document.getElementById('footerInput').value : '';
-                    const footerIcon = document.getElementById('footerIconInput') ? document.getElementById('footerIconInput').value : '';
+                    const authorName = resolveVariables(document.getElementById('authorNameInput') ? document.getElementById('authorNameInput').value : '');
+                    const authorIcon = resolveVariables(document.getElementById('authorIconInput') ? document.getElementById('authorIconInput').value : '');
+                    const title = resolveVariables(document.getElementById('titleInput') ? document.getElementById('titleInput').value : '');
+                    const desc = resolveVariables(document.getElementById('embedDescInput') ? document.getElementById('embedDescInput').value : '');
+                    const image = resolveVariables(document.getElementById('imageInput') ? document.getElementById('imageInput').value : '');
+                    const thumbnail = resolveVariables(document.getElementById('thumbnailInput') ? document.getElementById('thumbnailInput').value : '');
+                    const footer = resolveVariables(document.getElementById('footerInput') ? document.getElementById('footerInput').value : '');
+                    const footerIcon = resolveVariables(document.getElementById('footerIconInput') ? document.getElementById('footerIconInput').value : '');
 
                     const pAuthor = document.getElementById('previewAuthor');
                     const pAuthorName = document.getElementById('previewAuthorName');
@@ -901,7 +949,7 @@ app.get('/dashboard/:guildId', (req, res) => {
 app.post('/dashboard/:guildId/send-update', async (req, res) => {
     const guildId = req.params.guildId;
     const { updateChannel, updateTitle, updateDesc } = req.body;
-    const guild = discordClient.guilds.cache.get(guildId);
+    const guild = discordClient ? discordClient.guilds.cache.get(guildId) : null;
 
     if (guild && updateChannel) {
         const channel = guild.channels.cache.get(updateChannel);
@@ -959,10 +1007,9 @@ app.post('/dashboard/:guildId/register-birthday', async (req, res) => {
     if (!birthdays[guildId]) birthdays[guildId] = {};
     if (!birthdays[guildId][targetUserId]) birthdays[guildId][targetUserId] = [];
     
-    // Push multiple birthday entries support
     birthdays[guildId][targetUserId].push({ date: birthdayDate, time: birthdayTime || '00:00' });
 
-    const guild = discordClient.guilds.cache.get(guildId);
+    const guild = discordClient ? discordClient.guilds.cache.get(guildId) : null;
     if (guild) {
         try {
             const member = await guild.members.fetch(targetUserId);
@@ -984,12 +1031,10 @@ app.post('/dashboard/:guildId/register-birthday', async (req, res) => {
 app.post('/dashboard/:guildId/edit-server', async (req, res) => {
     const guildId = req.params.guildId;
     const { serverName, serverIconUrl } = req.body;
-    const guild = discordClient.guilds.cache.get(guildId);
+    const guild = discordClient ? discordClient.guilds.cache.get(guildId) : null;
     if (guild) {
-        await guild.setName(serverName).catch(() => {});
-        if (serverIconUrl) {
-            await guild.setIcon(serverIconUrl).catch(() => {});
-        }
+        if (serverName) await guild.setName(serverName).catch(() => {});
+        if (serverIconUrl) await guild.setIcon(serverIconUrl).catch(() => {});
     }
     res.redirect(`/dashboard/${guildId}?saved=true`);
 });
@@ -997,7 +1042,7 @@ app.post('/dashboard/:guildId/edit-server', async (req, res) => {
 app.post('/dashboard/:guildId/upload-emoji-file', async (req, res) => {
     const guildId = req.params.guildId;
     const { emojiName } = req.body;
-    const guild = discordClient.guilds.cache.get(guildId);
+    const guild = discordClient ? discordClient.guilds.cache.get(guildId) : null;
 
     if (guild && req.files && req.files.emojiFile) {
         const file = req.files.emojiFile;
@@ -1054,7 +1099,7 @@ app.get('/logout', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🌐 Luffy.void Web Panel online at https://luffy-void1.onrender.com`);
+    console.log(`🌐 Luffy.void Web Panel online on port ${PORT}`);
 });
 
 // ==========================================
@@ -1127,10 +1172,10 @@ const commandsList = [
     new SlashCommandBuilder().setName('anti-nuke').setDescription('Toggle anti-nuke server security')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     
-    new SlashCommandBuilder().setName('anti-ride').setDescription('Toggle anti-raid security protection')
+    new SlashCommandBuilder().setName('anti-raid').setDescription('Toggle anti-raid security protection')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     
-    new SlashCommandBuilder().setName('anti-nfsw').setDescription('Toggle anti-NSFW image scanner protection')
+    new SlashCommandBuilder().setName('anti-nsfw').setDescription('Toggle anti-NSFW image scanner protection')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     
     new SlashCommandBuilder().setName('anti-server').setDescription('Toggle anti-server lockdown security')
@@ -1157,7 +1202,7 @@ const commandsList = [
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
     new SlashCommandBuilder().setName('setyoutube').setDescription('Configure YouTube custom message')
-        .addSubcommand(sub => sub.setName('massage').setDescription('Set custom notification message')
+        .addSubcommand(sub => sub.setName('message').setDescription('Set custom notification message')
             .addStringOption(o => o.setName('message').setDescription('Message text').setRequired(true)))
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
@@ -1265,7 +1310,6 @@ client.on('interactionCreate', async interaction => {
                 if (!birthdays[guild.id]) birthdays[guild.id] = {};
                 if (!birthdays[guild.id][user.id]) birthdays[guild.id][user.id] = [];
                 
-                // Pushes new birthday entry allowing multiple birthdays per user
                 birthdays[guild.id][user.id].push({ date, time: '00:00' });
                 return interaction.reply({ content: `🎉 Successfully recorded additional birthday for <@${user.id}> as **${date}**!` });
             } 
@@ -1322,7 +1366,7 @@ client.on('interactionCreate', async interaction => {
         if (commandName === 'roast') {
             const targetUser = options.getUser('user');
             const roasts = [
-                `hey <@${targetUser.id}>, you bring everyone so much joy... when you leave the room.`,
+                `Hey <@${targetUser.id}>, you bring everyone so much joy... when you leave the room.`,
                 `<@${targetUser.id}> must have been born on a highway because that's where most accidents happen.`,
                 `If I wanted to commit suicide, I'd jump down your ego to your IQ level, <@${targetUser.id}>.`
             ];
@@ -1382,11 +1426,11 @@ client.on('interactionCreate', async interaction => {
             return interaction.reply({ content: `🛡️ **Anti-Nuke Protection:** Enabled & Monitoring server audit logs.` });
         }
 
-        if (commandName === 'anti-ride') {
+        if (commandName === 'anti-raid') {
             return interaction.reply({ content: `🛡️ **Anti-Raid Protection:** Enabled & filtering rapid joins.` });
         }
 
-        if (commandName === 'anti-nfsw') {
+        if (commandName === 'anti-nsfw') {
             return interaction.reply({ content: `🛡️ **Anti-NSFW Scanner:** Enabled & scanning media attachments.` });
         }
 
@@ -1478,7 +1522,7 @@ client.on('interactionCreate', async interaction => {
             return interaction.reply({ content: `📺 YouTube notification link successfully configured: \`${link}\`` });
         }
 
-        if (commandName === 'setyoutube' && subcommand === 'massage') {
+        if (commandName === 'setyoutube' && subcommand === 'message') {
             const msg = options.getString('message');
             if (!youtubeConfig[guild.id]) youtubeConfig[guild.id] = {};
             youtubeConfig[guild.id].message = msg;
@@ -1503,7 +1547,9 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
+// Member join handler with text & embed welcome messages
 client.on('guildMemberAdd', async member => {
+    // 1. Assign Auto Role
     const roleId = autoRoles[member.guild.id];
     if (roleId) {
         const role = member.guild.roles.cache.get(roleId);
@@ -1515,19 +1561,16 @@ client.on('guildMemberAdd', async member => {
     const settings = serverSettings[member.guild.id];
     if (!settings) return;
 
+    // 2. Plain Text Welcome Message
     if (settings.welcomeChannel) {
         const channel = member.guild.channels.cache.get(settings.welcomeChannel);
         if (channel && settings.welcomeMessage) {
-            let textMessage = settings.welcomeMessage
-                .replace(/{mention}/g, `<@${member.id}>`)
-                .replace(/{server}/g, member.guild.name)
-                .replace(/{user\(proper\)}/g, member.user.username)
-                .replace(/{server\(members\)}/g, member.guild.memberCount.toString());
-
+            const textMessage = parseWelcomeVariables(settings.welcomeMessage, member);
             await channel.send({ content: textMessage }).catch(() => {});
         }
     }
 
+    // 3. Embed Welcome Message
     if (settings.embedWelcomeChannel) {
         const embedChannel = member.guild.channels.cache.get(settings.embedWelcomeChannel);
         if (embedChannel) {
@@ -1536,53 +1579,31 @@ client.on('guildMemberAdd', async member => {
                 .setTimestamp();
 
             if (settings.embedTitle) {
-                const parsedTitle = settings.embedTitle
-                    .replace(/{mention}/g, `<@${member.id}>`)
-                    .replace(/{server}/g, member.guild.name)
-                    .replace(/{user\(proper\)}/g, member.user.username)
-                    .replace(/{server\(members\)}/g, member.guild.memberCount.toString());
-                embed.setTitle(parsedTitle);
+                embed.setTitle(parseWelcomeVariables(settings.embedTitle, member));
             }
             if (settings.embedUrl) {
                 embed.setURL(settings.embedUrl);
             }
             if (settings.embedDesc) {
-                const parsedDesc = settings.embedDesc
-                    .replace(/{mention}/g, `<@${member.id}>`)
-                    .replace(/{server}/g, member.guild.name)
-                    .replace(/{user\(proper\)}/g, member.user.username)
-                    .replace(/{server\(members\)}/g, member.guild.memberCount.toString());
-                embed.setDescription(parsedDesc);
+                embed.setDescription(parseWelcomeVariables(settings.embedDesc, member));
             }
             if (settings.embedAuthorName) {
-                const parsedAuthorName = settings.embedAuthorName
-                    .replace(/{mention}/g, `<@${member.id}>`)
-                    .replace(/{server}/g, member.guild.name)
-                    .replace(/{user\(proper\)}/g, member.user.username)
-                    .replace(/{server\(members\)}/g, member.guild.memberCount.toString());
-                
                 embed.setAuthor({
-                    name: parsedAuthorName,
-                    iconURL: settings.embedAuthorIcon || undefined,
+                    name: parseWelcomeVariables(settings.embedAuthorName, member),
+                    iconURL: settings.embedAuthorIcon ? parseWelcomeVariables(settings.embedAuthorIcon, member) : undefined,
                     url: settings.embedAuthorUrl || undefined
                 });
             }
             if (settings.embedImage) {
-                embed.setImage(settings.embedImage);
+                embed.setImage(parseWelcomeVariables(settings.embedImage, member));
             }
             if (settings.embedThumbnail) {
-                embed.setThumbnail(settings.embedThumbnail);
+                embed.setThumbnail(parseWelcomeVariables(settings.embedThumbnail, member));
             }
             if (settings.embedFooterText) {
-                const parsedFooter = settings.embedFooterText
-                    .replace(/{mention}/g, `<@${member.id}>`)
-                    .replace(/{server}/g, member.guild.name)
-                    .replace(/{user\(proper\)}/g, member.user.username)
-                    .replace(/{server\(members\)}/g, member.guild.memberCount.toString());
-                
                 embed.setFooter({
-                    text: parsedFooter,
-                    iconURL: settings.embedFooterIcon || undefined
+                    text: parseWelcomeVariables(settings.embedFooterText, member),
+                    iconURL: settings.embedFooterIcon ? parseWelcomeVariables(settings.embedFooterIcon, member) : undefined
                 });
             }
 
